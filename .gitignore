@@ -92,5 +92,4 @@ typings/
 Thumbs.db
 
 # Project specific
-backend/data/*.json
 frontend/dist/
