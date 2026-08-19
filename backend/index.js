@@ -17,12 +17,15 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Sync database and start server
-sequelize.sync().then(() => {
-  console.log('Database synced');
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+if (process.env.NODE_ENV !== 'test') {
+  sequelize.sync().then(() => {
+    console.log('Database synced');
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  }).catch(err => {
+    console.error('Database sync failed:', err);
   });
-}).catch(err => {
-  console.error('Database sync failed:', err);
-});
+}
+
+module.exports = app;

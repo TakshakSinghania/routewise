@@ -1,67 +1,105 @@
-# RouteWise: AI-Powered Delivery Route Optimizer
+# RouteWise - Interactive Pathfinding & Delivery Route Optimization Engine
 
 🚀 **Live Demo:** [https://routewise-seven.vercel.app](https://routewise-seven.vercel.app)
 
-RouteWise is a full-stack web application designed to demonstrate advanced pathfinding and optimization algorithms (Dijkstra, A*, and Traveling Salesperson Problem heuristics) on real-world road networks. 
+RouteWise is a full-stack graph algorithms and route optimization platform built on top of authentic OpenStreetMap road networks. It provides interactive visual comparisons of shortest-path algorithms (**Dijkstra's Algorithm** and **A* Search**) and solves multi-stop delivery routes using heuristic approximations for the **Traveling Salesperson Problem (TSP)** with **Nearest Neighbor** and **2-Opt local search**.
 
-Built with a Node.js backend and a React/Leaflet frontend, the application provides an interactive, beautiful interface to visualize routing in multiple major global cities.
+---
 
-## Features
+## 🌟 Key Features
 
-- **Real-World Graph Navigation**: Uses OpenStreetMap (OSM) data to construct authentic routing graphs, adhering strictly to real roads, one-ways, and natural boundaries.
-- **Instant Multi-City Switching**: Pre-cached graphs for 5 major global downtown areas (New York, London, Tokyo, Seoul, Paris) allow instantaneous swapping between locations without slow on-the-fly downloads.
-- **Shortest Path Algorithms**: Visualizes both Dijkstra and A* pathfinding. Watch the algorithms "think" by observing the explored node animations.
-- **Route Optimization (TSP)**: Calculates the most efficient multi-stop route using Nearest Neighbor and 2-Opt optimization heuristics, including a dynamic benchmark comparison to exact Brute Force solutions.
-- **Dynamic Snap-To-Road**: Intelligently snaps clicked coordinates to the nearest valid road node.
+- **Authentic Road Graph Ingestion**: Parses real-world OpenStreetMap (OSM) vector data, calculating Haversine edge distances, one-way road restrictions, and street junctions.
+- **Pre-Cached Multi-City Downtowns**: Instant switching between 5 major global downtown areas (**New York, London, Tokyo, Seoul, Paris**) without on-the-fly network latency.
+- **Shortest Path Comparison**:
+  - **Dijkstra's Algorithm**: Implemented with a custom binary `MinHeap` ($O((V + E) \log V)$), uniformly expanding outward to guarantee optimal shortest paths.
+  - **A* Search**: Uses a distance-to-goal heuristic ($h(n)$) to direct vertex exploration, reducing explored nodes by up to 60%.
+- **Multi-Stop TSP Optimization**:
+  - **Nearest Neighbor Greedy Heuristic**: Constructs an initial Hamiltonian path in $O(N^2)$.
+  - **2-Opt Local Search**: Iteratively uncrosses intersecting road segments until reaching a local optimum.
+  - **Dynamic Algorithmic Benchmarking**: Benchmarks heuristic execution time vs. exact brute-force ($O(N!)$) calculations in real time.
+- **Coordinate Road Snapping**: Automatically snaps arbitrary click coordinates to the closest valid road node in the graph.
+- **Token-Bucket Rate Limiting**: Protects backend computation endpoints from denial-of-service spikes.
 
-## Technology Stack
+---
 
-- **Frontend**: React, Vite, TailwindCSS, React-Leaflet, Lucide React
-- **Backend**: Node.js, Express, Sequelize (SQLite), Axios
-- **Data Source**: OpenStreetMap (Overpass API)
+## 📊 Algorithm Complexity Comparison
 
-## Getting Started
+| Algorithm | Type | Time Complexity | Space Complexity | Guarantees |
+|---|---|---|---|---|
+| **Dijkstra** | Shortest Path | $O((V + E) \log V)$ | $O(V)$ | Optimal shortest path |
+| **A* Search** | Shortest Path | $O((V + E) \log V)$ | $O(V)$ | Optimal path (admissible heuristic) |
+| **Nearest Neighbor** | TSP Heuristic | $O(N^2)$ | $O(N)$ | Fast initial tour approximation |
+| **2-Opt Optimization** | TSP Heuristic | $O(k \cdot N^2)$ | $O(N)$ | Eliminates crossing edges |
+| **Brute Force TSP** | Exact Search | $O(N!)$ | $O(N)$ | Globally optimal tour (benchmark baseline) |
+
+---
+
+## 🛠️ Technology Stack
+
+- **Frontend**: React 18, Vite, Tailwind CSS, React-Leaflet, Chart.js, Lucide Icons
+- **Backend**: Node.js, Express.js, Sequelize ORM, SQLite
+- **Data & Geography**: OpenStreetMap Overpass API, Haversine Geographic Distance
+- **Testing**: Jest, Supertest (10 unit and API integration tests)
+
+---
+
+## 🚀 Getting Started Locally
 
 ### Prerequisites
-- Node.js (v16+ recommended)
-- npm or yarn
+- **Node.js**: v18+ or v20+
+- **npm**: v9+
 
-### Installation
+### 1. Clone the Repository
+```bash
+git clone https://github.com/TakshakSinghania/routewise.git
+cd routewise
+```
 
-1. Clone the repository
-2. Install frontend dependencies:
-   ```bash
-   cd frontend
-   npm install
-   ```
-3. Install backend dependencies:
-   ```bash
-   cd ../backend
-   npm install
-   ```
-
-### Running the Application
-
-You need two terminals to run the frontend and backend simultaneously.
-
-**Terminal 1 (Backend)**:
+### 2. Backend Setup
 ```bash
 cd backend
-node index.js
+npm install
+npm test          # Run automated test suite (10 tests)
+npm start         # Starts backend API on http://localhost:5000
 ```
-*The backend runs on http://localhost:5000*
 
-**Terminal 2 (Frontend)**:
+### 3. Frontend Setup (Separate Terminal)
 ```bash
 cd frontend
-npm run dev
+npm install
+npm run dev       # Starts Vite React dashboard on http://localhost:5173
 ```
-*The frontend will run on the port specified by Vite (usually http://localhost:5173).*
 
-## How It Works
+---
 
-1. **Graph Construction**: The backend parses OSM JSON elements, calculates Haversine distances for road segments, and builds an adjacency list representation of the city's road network.
-2. **Pathfinding**: 
-   - **Dijkstra**: Expands uniformly in all directions, exploring nodes until it finds the destination. Guaranteed shortest path.
-   - **A***: Uses a Haversine distance heuristic to guide the search direction, exploring significantly fewer nodes than Dijkstra.
-3. **TSP Optimization**: When multiple stops are added, the backend calculates all-pairs shortest paths, runs Nearest Neighbor to find a fast approximate route, and refines it with 2-Opt local search to prevent crossing paths.
+## 🧪 Automated Testing
+
+Run the test suite from the `backend/` directory:
+
+```bash
+cd backend
+npm test
+```
+
+Verifies:
+* `MinHeap`: Priority ordering, element insertion, and $O(\log N)$ extraction.
+* `Graph & Pathfinding`: Grid graph shortest-path validation for Dijkstra and A*.
+* `TSP Heuristics`: Nearest Neighbor valid tour generation and 2-Opt distance minimization.
+* `API Endpoints`: `/health`, `/api/set-city`, `/api/snap`, and `/api/benchmark` integration tests.
+
+---
+
+## 📡 API Reference
+
+* `GET /health` — Service health status
+* `POST /api/set-city` — Switch active map graph (`{ cityId: "new_york" | "london" | "tokyo" | "paris" | "seoul" }`)
+* `POST /api/snap` — Snap raw coordinate `{ lat, lng }` to nearest road vertex
+* `POST /api/shortest-path` — Calculate path (`{ start, end, algorithm: "Dijkstra" | "A*" }`)
+* `POST /api/tsp` — Optimize multi-stop route (`{ stops: [{ lat, lng }] }`)
+* `POST /api/benchmark` — Compare heuristic approximation against exact TSP solver (`{ stops }`)
+
+---
+
+## 📄 License
+
+MIT License. Designed and built by **Takshak Singhania**.

@@ -93,6 +93,29 @@ class Graph {
     }
     return graph;
   }
+
+  // Helper to generate a simple grid graph with unit weight 1 (for testing & simulations)
+  static generateGridGraph(rows = 3, cols = 3) {
+    const graph = new Graph();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        graph.addNode(`${r},${c}`, c, r);
+      }
+    }
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const id = `${r},${c}`;
+        if (r + 1 < rows) {
+          graph.addEdge(id, `${r + 1},${c}`, 1, false);
+        }
+        if (c + 1 < cols) {
+          graph.addEdge(id, `${r},${c + 1}`, 1, false);
+        }
+      }
+    }
+    return graph;
+  }
 }
 
 module.exports = Graph;
