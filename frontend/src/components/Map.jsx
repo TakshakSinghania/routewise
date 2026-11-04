@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, Tooltip, useMap, CircleMarker, Rectangle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -50,6 +50,10 @@ export default function Map({ stops, route, exploredNodes, optimizationSteps, al
   const [animatedExplored, setAnimatedExplored] = useState([]);
   const [tspRoute, setTspRoute] = useState([]);
   const [currentDistance, setCurrentDistance] = useState(null);
+  // Explored-node dots (up to ~10,000) are drawn on one canvas instead of one SVG element each.
+  // They use only fill colour and opacity, which canvas draws the same; route lines stay SVG so
+  // their CSS glow and pulse still apply.
+  const dotRenderer = useMemo(() => L.canvas(), []);
 
   useEffect(() => {
     // RESET everything if inputs clear
@@ -208,6 +212,7 @@ export default function Map({ stops, route, exploredNodes, optimizationSteps, al
             key={i}
             center={pos}
             radius={3}
+            renderer={dotRenderer}
             pathOptions={{ 
               color: exploreColor, 
               fillColor: exploreColor, 
