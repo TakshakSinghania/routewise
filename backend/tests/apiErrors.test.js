@@ -20,6 +20,10 @@ describe('API input validation and JSON errors', () => {
     expectJsonError(res, 400);
   });
 
+  test('POST without any JSON body returns a JSON 400, not a 500', async () => {
+    expectJsonError(await request(app).post('/api/tsp'), 400);
+  });
+
   test('unknown API route returns a JSON 404', async () => {
     expectJsonError(await request(app).post('/api/does-not-exist').send({}), 404);
   });

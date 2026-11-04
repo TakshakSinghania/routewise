@@ -9,6 +9,8 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+// Express 5 leaves req.body undefined when a request has no JSON body; handlers expect an object.
+app.use((req, res, next) => { req.body ??= {}; next(); });
 
 // Apply token-bucket rate limiter to all API routes (10 req/sec max)
 app.use('/api', rateLimiter(10, 2), apiRoutes);
