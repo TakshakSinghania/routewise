@@ -42,12 +42,13 @@ function twoOpt(route, distFn) {
   if (!route || route.length <= 2) return { bestRoute: route, optimizationSteps: [] };
 
   let bestRoute = [...route];
+  let bestDistance = calculateTotalDistance(bestRoute, distFn);
   let improved = true;
   let iterations = 0;
   const maxIterations = 1000; // Hard limit to prevent infinite loops
   const optimizationSteps = [];
-  
-  optimizationSteps.push({ route: [...bestRoute], distance: calculateTotalDistance(bestRoute, distFn) });
+
+  optimizationSteps.push({ route: [...bestRoute], distance: bestDistance });
 
   while (improved && iterations < maxIterations) {
     improved = false;
@@ -55,28 +56,25 @@ function twoOpt(route, distFn) {
 
     for (let i = 1; i < bestRoute.length - 2; i++) {
       for (let k = i + 1; k < bestRoute.length; k++) {
-        const currentDist = 
-          distFn(bestRoute[i - 1], bestRoute[i]) + 
-          distFn(bestRoute[k], k === bestRoute.length - 1 ? bestRoute[0] : bestRoute[k + 1]);
-        
-        const newDist = 
-          distFn(bestRoute[i - 1], bestRoute[k]) + 
-          distFn(bestRoute[i], k === bestRoute.length - 1 ? bestRoute[0] : bestRoute[k + 1]);
+        // Reverse the segment [i, k]
+        const newRoute = [
+          ...bestRoute.slice(0, i),
+          ...bestRoute.slice(i, k + 1).reverse(),
+          ...bestRoute.slice(k + 1)
+        ];
+        // Compare whole tours, not just the two end edges: with one-way streets, reversing a
+        // segment also changes the cost of every edge inside it.
+        const newDistance = calculateTotalDistance(newRoute, distFn);
 
         // If the new cost is strictly less, accept the swap
-        if (newDist < currentDist - 1e-6) { // use small epsilon for floating point safety
-          // Reverse the segment [i, k]
-          const newRoute = [
-            ...bestRoute.slice(0, i),
-            ...bestRoute.slice(i, k + 1).reverse(),
-            ...bestRoute.slice(k + 1)
-          ];
+        if (newDistance < bestDistance - 1e-6) { // use small epsilon for floating point safety
           bestRoute = newRoute;
+          bestDistance = newDistance;
           improved = true;
-          
+
           // Limit to 50 visualization steps
           if (optimizationSteps.length < 50) {
-            optimizationSteps.push({ route: [...bestRoute], distance: calculateTotalDistance(bestRoute, distFn) });
+            optimizationSteps.push({ route: [...bestRoute], distance: bestDistance });
           }
           
           break; // Break outer loop to restart search on the improved route

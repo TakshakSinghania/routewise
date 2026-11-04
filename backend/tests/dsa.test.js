@@ -90,6 +90,30 @@ describe('TSP Approximation', () => {
     expect(route.map(r => r.id)).toEqual(['depot', 'A', 'B', 'C']);
   });
 
+  test('2-opt removes a crossing in a symmetric tour', () => {
+    const stops = [
+      { id: 'depot', x: 0, y: 0 },
+      { id: 'B', x: 10, y: 10 },
+      { id: 'A', x: 0, y: 10 },
+      { id: 'C', x: 10, y: 0 }
+    ];
+    // depot -> B -> A -> C crosses itself (~48.3); the square perimeter is 40.
+    const { bestRoute } = twoOpt(stops, dist);
+    expect(calculateTotalDistance(bestRoute, dist)).toBeCloseTo(40);
+    expect(bestRoute[0].id).toBe('depot');
+  });
+
+  test('2-opt never makes a one-way (asymmetric) tour longer', () => {
+    // Reversing stops [1, 2] makes the two end edges 2 shorter (0->2 + 1->3 = 6 vs 0->1 + 2->3 = 8),
+    // but the middle edge flips from 1->2 = 2 to 2->1 = 8. Judging by the end edges alone turned 15 into 19.
+    const M = [[0, 4, 2, 8], [4, 0, 2, 4], [8, 8, 0, 4], [5, 5, 3, 0]];
+    const oneWay = (a, b) => M[a][b];
+    const { bestRoute, optimizationSteps } = twoOpt([0, 1, 2, 3], oneWay);
+    expect(calculateTotalDistance(bestRoute, oneWay)).toBeLessThanOrEqual(15);
+    expect(bestRoute[0]).toBe(0);
+    expect(optimizationSteps.at(-1).distance).toBe(calculateTotalDistance(bestRoute, oneWay));
+  });
+
   test('Brute force should find optimal route', () => {
     const stops = [
       { id: 'depot', x: 0, y: 0 },

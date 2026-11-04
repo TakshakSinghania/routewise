@@ -1,8 +1,8 @@
 const request = require('supertest');
 const app = require('../index');
 const Graph = require('../dsa/graph');
-const { aStar } = require('../dsa/shortestPath');
-const { planTour } = require('../dsa/tsp');
+const { aStar, dijkstra } = require('../dsa/shortestPath');
+const { planTour, nearestNeighbor, twoOpt, calculateTotalDistance } = require('../dsa/tsp');
 const { cityGraphs } = require('../services/cityGraphs');
 
 // Same Haversine formula the map importer used for edge weights.
@@ -82,6 +82,27 @@ describe('planTour on the real city graphs', () => {
     const [a, b, c] = [routableNodes[10].id, routableNodes[500].id, routableNodes[2000].id];
     const stopIds = [a, b, b, c];
     expectValidTour(graph, stopIds, planTour(graph, stopIds));
+  });
+});
+
+describe('2-opt on real one-way road distances', () => {
+  test('never returns a longer tour than Nearest Neighbor gave it, and every step improves', () => {
+    const random = rng(4242);
+    const worse = [];
+    for (const cityId of Object.keys(cityGraphs).sort()) {
+      const { graph, routableNodes } = cityGraphs[cityId];
+      for (let t = 0; t < 6; t++) {
+        const ids = Array.from({ length: 7 }, () => routableNodes[Math.floor(random() * routableNodes.length)].id);
+        const M = ids.map((a, i) => ids.map((b, j) => (i === j ? 0 : dijkstra(graph, a, b).distance)));
+        const dist = (a, b) => M[a][b];
+        const nn = nearestNeighbor(ids.map((_, i) => i), dist);
+        const { bestRoute, optimizationSteps } = twoOpt(nn, dist);
+        const [before, after] = [calculateTotalDistance(nn, dist), calculateTotalDistance(bestRoute, dist)];
+        const stepsImprove = optimizationSteps.every((s, i) => i === 0 || s.distance < optimizationSteps[i - 1].distance);
+        if (after > before + 1e-6 || !stepsImprove) worse.push(`${cityId} tour ${t}: ${before.toFixed(1)} m -> ${after.toFixed(1)} m`);
+      }
+    }
+    expect(worse).toEqual([]);
   });
 });
 
