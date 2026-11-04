@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "oxlint",
     "test": "vitest run",
+    "check:tiles": "node scripts/check-tiles.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

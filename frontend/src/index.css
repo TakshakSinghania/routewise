@@ -35,6 +35,11 @@
   font-family: 'Inter', sans-serif !important;
 }
 
+/* OSM tiles are light; invert them so the map keeps the dark theme */
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+
 /* Fix popup styling */
 .leaflet-popup-content-wrapper, .leaflet-tooltip {
   background-color: #1e293b !important;
