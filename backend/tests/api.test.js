@@ -8,7 +8,7 @@ describe('Routewise API Endpoints', () => {
     expect(res.body).toEqual({ status: 'ok' });
   });
 
-  test('POST /api/set-city switches active city metadata', async () => {
+  test('POST /api/set-city returns city metadata', async () => {
     const res = await request(app)
       .post('/api/set-city')
       .send({ cityId: 'london' });

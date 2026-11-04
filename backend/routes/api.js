@@ -1,12 +1,10 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 const { dijkstra, aStar } = require('../dsa/shortestPath');
-const Graph = require('../dsa/graph');
 const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP } = require('../dsa/tsp');
 const Route = require('../models/Route');
 const { downloadOSM } = require('../services/mapLoader');
 const { isLatLng, stopsError } = require('../validation');
+const { getCity } = require('../services/cityGraphs');
 
 const router = express.Router();
 
@@ -14,43 +12,11 @@ const MAX_SNAP_DISTANCE_M = 500; // clicks further than this from any road are o
 const MAX_TSP_STOPS = 25; // TSP runs stops^2 Dijkstra searches on the event loop (25 stops ≈ 0.4 s)
 const MAX_BENCHMARK_STOPS = 10; // brute force is O(n!)
 
-// Load all real city graphs ONCE on startup from cached map data
-console.log("Loading all real city graphs from local cache...");
-const cityGraphs = {};
-let currentCityId = 'new_york';
-let currentLocationName = "New York";
-let currentBounds = [[40.705, -74.015], [40.725, -73.995]];
-
-const dataDir = path.join(__dirname, '..', 'data');
-if (fs.existsSync(dataDir)) {
-  const files = fs.readdirSync(dataDir).filter(f => f.startsWith('map_') && f.endsWith('.json'));
-  for (const file of files) {
-    const cityId = file.replace('map_', '').replace('.json', '');
-    try {
-      const mapData = JSON.parse(fs.readFileSync(path.join(dataDir, file), 'utf8'));
-      const graph = new Graph();
-      
-      mapData.nodes.forEach(node => {
-        graph.addNode(node.id, node.lng, node.lat);
-      });
-      
-      mapData.edges.forEach(edge => {
-        graph.addEdge(edge.source, edge.target, edge.weight, edge.isOneWay);
-      });
-      
-      cityGraphs[cityId] = {
-        graph: graph,
-        name: mapData.name,
-        bounds: mapData.bounds,
-        center: mapData.center
-      };
-      console.log(`Successfully loaded ${mapData.name} (${cityId}) with ${graph.getAllNodes().length} nodes.`);
-    } catch (error) {
-      console.error(`Failed to load ${file}:`, error.message);
-    }
-  }
-} else {
-  console.warn("Data directory not found. Please run downloadMultiMaps.js first.");
+// Each request names its own city (body.cityId, default New York); nothing is shared between visitors.
+function withCity(req, res, next) {
+  req.city = getCity(req.body.cityId);
+  if (!req.city) return res.status(400).json({ error: "Unknown cityId." });
+  next();
 }
 
 // Haversine distance in meters for snapping
@@ -66,10 +32,9 @@ function haversineDist(p1, p2) {
 
 // Helper to snap a lat/lng point to the closest node in our static graph.
 // Returns { id, distance } where distance is in meters.
-function snapToGraph(point) {
+function snapToGraph(graph, point) {
   let closestId = null;
   let minDist = Infinity;
-  const graph = cityGraphs[currentCityId].graph;
   graph.getAllNodes().forEach(node => {
     const d = haversineDist(point, { lat: node.y, lng: node.x });
     if (d < minDist) { minDist = d; closestId = node.id; }
@@ -78,48 +43,46 @@ function snapToGraph(point) {
   return { id: closestId, distance: minDist };
 }
 
-const outsideAreaError = () => `Location is outside the supported routing area (${currentLocationName}).`;
+const outsideAreaError = (city) => `Location is outside the supported routing area (${city.name}).`;
 
-router.post('/snap', (req, res) => {
+router.post('/snap', withCity, (req, res) => {
   const { lat, lng } = req.body;
   console.log("SNAP REQUEST:", req.body);
   if (!isLatLng(req.body)) return res.status(400).json({ error: "Missing or invalid coordinates" });
 
-  const snapped = snapToGraph({ lat, lng });
+  const graph = req.city.graph;
+  const snapped = snapToGraph(graph, { lat, lng });
   if (!snapped.id) return res.status(400).json({ error: "No nearby road found" });
 
-  const graph = cityGraphs[currentCityId].graph;
   const node = graph.getNode(snapped.id);
 
   // If user clicked far away from our downloaded map area, reject the click
   if (snapped.distance > MAX_SNAP_DISTANCE_M) {
-    return res.status(400).json({ error: outsideAreaError() });
+    return res.status(400).json({ error: outsideAreaError(req.city) });
   }
 
   console.log("SNAPPED TO:", node.id, node.y, node.x);
   res.json({ lat: node.y, lng: node.x, id: node.id });
 });
 
+// Read-only: returns a city's metadata. The client sends cityId with each routing request.
 router.post('/set-city', (req, res) => {
   const { cityId } = req.body;
-  if (typeof cityId !== 'string' || !Object.hasOwn(cityGraphs, cityId)) {
+  const city = cityId === undefined ? undefined : getCity(cityId);
+  if (!city) {
     return res.status(400).json({ error: "City not found in local cache." });
   }
 
-  currentCityId = cityId;
-  currentLocationName = cityGraphs[cityId].name;
-  currentBounds = cityGraphs[cityId].bounds;
-
-  res.json({ 
-    success: true, 
-    bounds: currentBounds,
-    name: currentLocationName,
-    center: cityGraphs[cityId].center,
-    nodesLoaded: cityGraphs[cityId].graph.getAllNodes().length
+  res.json({
+    success: true,
+    bounds: city.bounds,
+    name: city.name,
+    center: city.center,
+    nodesLoaded: city.graph.getAllNodes().length
   });
 });
 
-router.post('/shortest-path', (req, res) => {
+router.post('/shortest-path', withCity, (req, res) => {
   const { start, end, algorithm = 'Dijkstra' } = req.body;
   if (!isLatLng(start) || !isLatLng(end)) return res.status(400).json({ error: "Missing or invalid start or end point" });
   if (algorithm !== 'Dijkstra' && algorithm !== 'A*') {
@@ -127,15 +90,15 @@ router.post('/shortest-path', (req, res) => {
   }
 
   try {
-    const startSnap = snapToGraph(start);
-    const endSnap = snapToGraph(end);
+    const graph = req.city.graph;
+    const startSnap = snapToGraph(graph, start);
+    const endSnap = snapToGraph(graph, end);
     if (startSnap.distance > MAX_SNAP_DISTANCE_M || endSnap.distance > MAX_SNAP_DISTANCE_M) {
-      return res.status(400).json({ error: outsideAreaError() });
+      return res.status(400).json({ error: outsideAreaError(req.city) });
     }
     const startId = startSnap.id;
     const endId = endSnap.id;
 
-    const graph = cityGraphs[currentCityId].graph;
     let result = algorithm === 'A*' ? aStar(graph, startId, endId) : dijkstra(graph, startId, endId);
     
     if (result.distance === -1) {
@@ -155,25 +118,24 @@ router.post('/shortest-path', (req, res) => {
   }
 });
 
-router.post('/tsp', (req, res) => {
+router.post('/tsp', withCity, (req, res) => {
   const { stops } = req.body;
   const invalid = stopsError(stops, 2, MAX_TSP_STOPS);
   if (invalid) return res.status(400).json({ error: invalid });
 
   try {
     const startTime = performance.now();
+    const graph = req.city.graph;
 
     // Snap all stops
-    const snapped = stops.map(stop => snapToGraph(stop));
+    const snapped = stops.map(stop => snapToGraph(graph, stop));
     const far = snapped.findIndex(s => s.distance > MAX_SNAP_DISTANCE_M);
-    if (far !== -1) return res.status(400).json({ error: `Stop ${far}: ${outsideAreaError()}` });
+    if (far !== -1) return res.status(400).json({ error: `Stop ${far}: ${outsideAreaError(req.city)}` });
     const snappedIds = snapped.map(s => s.id);
-    
-    // Precompute shortest paths between all pairs
-    const distanceMatrix = {}; 
-    snappedIds.forEach(id => distanceMatrix[id] = {});
 
-    const graph = cityGraphs[currentCityId].graph;
+    // Precompute shortest paths between all pairs
+    const distanceMatrix = {};
+    snappedIds.forEach(id => distanceMatrix[id] = {});
 
     for (let i = 0; i < snappedIds.length; i++) {
       for (let j = 0; j < snappedIds.length; j++) {

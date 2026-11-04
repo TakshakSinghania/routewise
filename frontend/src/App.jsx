@@ -22,12 +22,14 @@ export default function App() {
   const [position, setPosition] = useState([40.715, -74.005]);
   const [bounds, setBounds] = useState([[40.705, -74.015], [40.725, -73.995]]);
   const [locationName, setLocationName] = useState("New York");
+  const [cityId, setCityId] = useState('new_york'); // sent with every routing request
 
-  const handleCityChange = async (cityId) => {
+  const handleCityChange = async (newCityId) => {
     setIsLoading(true);
     setComputingState('Switching city...');
     try {
-      const data = await setCity(cityId);
+      const data = await setCity(newCityId);
+      setCityId(newCityId);
       setPosition(data.center);
       setBounds(data.bounds);
       setLocationName(data.name);
@@ -45,7 +47,7 @@ export default function App() {
     setIsSnapping(true);
     setComputingState('Snapping to road network...');
     try {
-      const snapped = await snapCoordinate(latlng);
+      const snapped = await snapCoordinate(latlng, cityId);
       setStops(prev => [...prev, snapped]);
       setRoute(null);
       setExploredNodes(null);
@@ -84,7 +86,7 @@ export default function App() {
         const start = stops[i];
         const end = stops[i + 1];
         
-        const data = await getShortestPath(start, end, algorithm);
+        const data = await getShortestPath(start, end, algorithm, cityId);
         
         if (i < stops.length - 2) {
           combinedPath = combinedPath.concat(data.path.slice(0, -1));
@@ -115,7 +117,7 @@ export default function App() {
     setIsLoading(true);
     setComputingState('Running TSP Optimization...');
     try {
-      const data = await getOptimizedRoute(stops);
+      const data = await getOptimizedRoute(stops, cityId);
       setOptimizationSteps(data.optimizationSteps || []);
       setRoute(data.route);
       setResults({ timeMs: data.timeMs, distance: data.distance });

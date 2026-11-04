@@ -4,18 +4,18 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
 });
 
-export const snapCoordinate = async (latlng) => {
-  const { data } = await api.post('/snap', latlng);
+export const snapCoordinate = async (latlng, cityId) => {
+  const { data } = await api.post('/snap', { ...latlng, cityId });
   return data;
 };
 
-export const getShortestPath = async (start, end, algorithm = 'Dijkstra') => {
-  const { data } = await api.post('/shortest-path', { start, end, algorithm });
+export const getShortestPath = async (start, end, algorithm = 'Dijkstra', cityId) => {
+  const { data } = await api.post('/shortest-path', { start, end, algorithm, cityId });
   return data;
 };
 
-export const getOptimizedRoute = async (stops) => {
-  const { data } = await api.post('/tsp', { stops });
+export const getOptimizedRoute = async (stops, cityId) => {
+  const { data } = await api.post('/tsp', { stops, cityId });
   return data;
 };
 
