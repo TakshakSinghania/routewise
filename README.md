@@ -151,8 +151,13 @@ $$\Delta \text{dist} = \text{dist}(u, x) + \text{dist}(v, y) - (\text{dist}(u, v
 http://localhost:5000/api
 ```
 
-#### 1. Set City Graph
+**City per request.** `snap`, `shortest-path` and `tsp` take an optional `cityId` (`'new_york' | 'london' | 'tokyo' | 'paris' | 'seoul'`, default `'new_york'`). The server keeps no "current city", so visitors never affect each other. An unknown `cityId` returns `400`.
+
+**Errors.** Invalid requests return JSON `{ "error": "..." }` with status `400` (bad input, or a point more than 500 m from the city's road network), `404` (unknown route) or `422` (a TSP stop has no road path to another stop). Server errors return a generic `500` without internal details.
+
+#### 1. City Metadata
 `POST /api/set-city`
+Read-only: returns the city's map metadata. It does not change server state.
 ```json
 // Request
 { "cityId": "new_york" } // 'new_york' | 'london' | 'tokyo' | 'paris' | 'seoul'
@@ -163,15 +168,16 @@ http://localhost:5000/api
   "name": "New York",
   "bounds": [[40.705, -74.015], [40.725, -73.995]],
   "center": [40.715, -74.005],
-  "nodesLoaded": 14820
+  "nodesLoaded": 5746
 }
 ```
 
 #### 2. Coordinate Road Snapping
 `POST /api/snap`
+Snaps to the nearest node of the city's main road network (nodes that can reach, and be reached from, every other one), so any two snapped stops can be routed between.
 ```json
 // Request
-{ "lat": 40.7128, "lng": -74.0060 }
+{ "lat": 40.7128, "lng": -74.0060, "cityId": "new_york" }
 
 // Response: 200 OK
 {
@@ -188,7 +194,8 @@ http://localhost:5000/api
 {
   "start": { "lat": 40.7128, "lng": -74.0060 },
   "end": { "lat": 40.7200, "lng": -73.9980 },
-  "algorithm": "A*" // 'Dijkstra' | 'A*'
+  "algorithm": "A*", // 'Dijkstra' (default) | 'A*'
+  "cityId": "new_york"
 }
 
 // Response: 200 OK
@@ -201,10 +208,28 @@ http://localhost:5000/api
 }
 ```
 
-#### 4. Algorithmic TSP Benchmark
-`POST /api/benchmark`
+#### 4. Multi-Stop Tour (TSP)
+`POST /api/tsp`
+Closed tour from the first stop (the depot) through every stop and back, on road distances. 2–25 stops.
 ```json
-// Request: Max 10 stops
+// Request
+{ "stops": [{ "lat": 40.7146, "lng": -74.0085 }, { "lat": 40.7105, "lng": -74.0016 }, { "lat": 40.7164, "lng": -73.9998 }], "cityId": "new_york" }
+
+// Response: 200 OK
+{
+  "distance": 3466.7,
+  "order": [0, 1, 2], // indexes into `stops`, in visiting order; always starts with the depot (0)
+  "route": [{ "lat": 40.7144201, "lng": -74.0085142 }, ...], // full road path, ends back at the depot
+  "optimizationSteps": [{ "distance": 3466.7, "route": [...] }], // initial tour + each 2-opt improvement, for animation
+  "timeMs": 7.9
+}
+```
+
+#### 5. Algorithmic TSP Benchmark
+`POST /api/benchmark`
+Straight-line (Haversine) distances, so the exact brute-force solver stays fast.
+```json
+// Request: 2–10 stops
 { "stops": [{ "lat": 40.712, "lng": -74.006 }, { "lat": 40.718, "lng": -74.001 }, { "lat": 40.722, "lng": -73.995 }] }
 
 // Response: 200 OK
