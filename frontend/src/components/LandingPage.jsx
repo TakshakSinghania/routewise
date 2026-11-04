@@ -55,7 +55,7 @@ export default function LandingPage({ onStart }) {
         <div className="flex gap-4 sm:gap-8 text-sm font-medium text-slate-400 items-center">
           <a href="#how-it-works" className="hidden sm:inline hover:text-white transition-colors">How it works</a>
           <a href="#benchmarks" className="hidden sm:inline hover:text-white transition-colors">Benchmarks</a>
-          <a href="https://github.com" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
+          <a href="https://github.com/TakshakSinghania/routewise" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
             <Code size={16} /> Source
           </a>
         </div>

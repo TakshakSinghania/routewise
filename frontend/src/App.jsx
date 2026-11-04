@@ -164,7 +164,7 @@ export default function App() {
           <span>Route<span className="text-teal-400">Wise</span></span>
         </div>
         <div className="flex gap-4">
-          <a href="https://github.com" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">
+          <a href="https://github.com/TakshakSinghania/routewise" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">
             <Code size={16} /> Source
           </a>
         </div>

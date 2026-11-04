@@ -10,8 +10,8 @@
 ```
 
 [![Live Demo](https://img.shields.io/badge/Demo-Live_Vercel-success?style=flat&logo=vercel)](https://routewise-seven.vercel.app)
-[![Node.js Version](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB.svg?logo=react)](https://react.dev/)
+[![Node.js Version](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)](https://react.dev/)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900.svg?logo=leaflet)](https://leafletjs.com/)
 [![OpenStreetMap](https://img.shields.io/badge/OSM-Overpass_API-7EBC6F.svg?logo=openstreetmap)](https://www.openstreetmap.org/)
 [![Tests](https://img.shields.io/badge/Tests-Jest_%26_Vitest-brightgreen.svg)](#automated-testing)
@@ -93,11 +93,11 @@ Traditional mapping libraries rely on opaque black-box APIs. **RouteWise** imple
 
 | Layer | Technology | Version | Purpose |
 |---|---|---|---|
-| **Frontend UI** | React.js / Vite | 18.x / 8.x | High-performance single page spatial visualization |
+| **Frontend UI** | React.js / Vite | 19.x / 8.x | High-performance single page spatial visualization |
 | **Mapping & GIS** | Leaflet / React-Leaflet | 1.9.x | Interactive tile rendering, polyline paths, waypoint markers |
 | **Styling & Charts** | Tailwind CSS / Chart.js | 3.x / 4.x | Dark glassmorphism theme & algorithmic runtime benchmarks |
-| **Backend API** | Node.js / Express.js | 20+ / 5.x | REST API routing and asynchronous algorithm execution |
-| **ORM & Database** | Sequelize / SQLite3 | 6.x | Persistence store for saved routes and benchmark logs |
+| **Backend API** | Node.js / Express.js | 20.x / 5.x | REST API routing and asynchronous algorithm execution |
+| **ORM & Database** | Sequelize / SQLite3 | 6.x | Persistence for saved routes (not durable on Render) |
 | **Testing** | Jest / Supertest | 30.x | Unit, API integration, regression and startup tests (backend); Vitest (frontend) |
 
 ---
@@ -140,7 +140,7 @@ $$\Delta \text{dist} = \text{dist}(u, x) + \text{dist}(v, y) - (\text{dist}(u, v
 | **Dijkstra's Algorithm** | Shortest Path | $O((V + E) \log V)$ | $O(V)$ | Optimal shortest path |
 | **A* Search** | Shortest Path | $O((V + E) \log V)$ | $O(V)$ | Optimal (admissible $h(n)$) |
 | **Nearest Neighbor** | TSP Approximation | $O(N^2)$ | $O(N)$ | Sub-optimal greedy tour |
-| **2-Opt Optimization** | TSP Local Search | $O(k \cdot N^2)$ | $O(N)$ | Eliminates edge crossings |
+| **2-Opt Optimization** | TSP Local Search | $O(k \cdot N^3)$ | $O(N)$ | Eliminates edge crossings |
 | **Brute Force TSP** | Exact Search | $O(N!)$ | $O(N)$ | Globally optimal baseline |
 
 ---
@@ -182,9 +182,9 @@ Snaps to the nearest node of the city's main road network (nodes that can reach,
 
 // Response: 200 OK
 {
-  "id": "node_98124",
-  "lat": 40.71278,
-  "lng": -74.00602
+  "id": "9373577341",
+  "lat": 40.7131018,
+  "lng": -74.0057772
 }
 ```
 
@@ -261,7 +261,7 @@ Straight-line (Haversine) distances, so the exact brute-force solver stays fast.
 ## Local Development & Setup
 
 ### Prerequisites
-* **Node.js**: v18.0.0+ or v20.0.0+
+* **Node.js**: 20.x (20.19 or newer; the backend declares `engines: 20.x`, the Render runtime)
 * **npm**: v9+
 
 ### 1. Clone the Repository
