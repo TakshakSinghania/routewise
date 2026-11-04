@@ -7,6 +7,24 @@ const sequelize = require('./db');
 const app = express();
 const PORT = process.env.PORT || 5001; // 5000 is taken by AirPlay Receiver on recent macOS
 
+app.disable('x-powered-by');
+// Security headers for this JSON-only API. Set first, so errors, 404s, 429s and CORS preflights get them too.
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+  });
+  // HSTS only over HTTPS. TLS ends at the proxy (Cloudflare/Render) and proxy trust is off, so
+  // req.secure is false there; an exact "X-Forwarded-Proto: https" also counts. A client can fake
+  // that header, but browsers ignore HSTS on plain-HTTP responses, so it is used for nothing else.
+  // The real proxy chain is still unverified: check the header on a deployed HTTPS response.
+  if (req.secure || req.get('X-Forwarded-Proto') === 'https') {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 app.use(cors());
 app.use(express.json({ limit: '100kb' })); // larger bodies get a JSON 413
 // Express 5 leaves req.body undefined when a request has no JSON body; handlers expect an object.

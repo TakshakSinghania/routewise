@@ -5,7 +5,7 @@ const rateLimiter = require('../middleware/rateLimiter');
 
 function send(limiter, req) {
   let status = 200;
-  const res = { status(code) { status = code; return this; }, json() { return this; } };
+  const res = { status(code) { status = code; return this; }, json() { return this; }, set() { return this; } };
   limiter({ ip: '198.51.100.1', body: {}, ...req }, res, () => {});
   return status;
 }

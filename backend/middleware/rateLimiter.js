@@ -28,6 +28,12 @@ class TokenBucket {
     }
     return false; // Rate limited
   }
+
+  // Whole seconds until `amount` tokens are available (at least 1), for the Retry-After header.
+  // The tiny epsilon keeps float noise (e.g. 360.00000000000006) from rounding up a whole second.
+  secondsUntil(amount) {
+    return Math.max(1, Math.ceil((amount - this.tokens) / this.refillRatePerSec - 1e-9));
+  }
 }
 
 // costOf(req) is how many tokens a request uses (default 1), so expensive requests count more.
@@ -49,6 +55,7 @@ function rateLimiter(capacity, refillRatePerSec, costOf = () => 1) {
     if (bucket.take(cost)) {
       next();
     } else {
+      res.set('Retry-After', String(bucket.secondsUntil(cost)));
       res.status(429).json({ error: 'Too many requests, please try again later.' });
     }
   };
