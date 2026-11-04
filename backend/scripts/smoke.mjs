@@ -1,7 +1,7 @@
 // Smoke test for a running RouteWise backend (local or deployed). It only reads data:
 // /set-city no longer changes server state, so it is safe to run against production.
 // Usage: node scripts/smoke.mjs https://your-backend.onrender.com   (default http://localhost:5001)
-// Requests are paced ~0.6 s apart to stay under the API rate limit (burst 10, 2 req/s).
+// Requests are paced ~0.6 s apart to stay under the API rate limit (30-token burst, 10 tokens/s, 1 token + 1 per stop).
 const base = (process.argv[2] || 'http://localhost:5001').replace(/\/$/, '');
 const CITIES = ['new_york', 'london', 'tokyo', 'paris', 'seoul'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

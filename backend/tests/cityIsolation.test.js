@@ -2,7 +2,7 @@ const request = require('supertest');
 const app = require('../index');
 
 // Two visitors share one server. Visitor B switches to London; visitor A keeps routing in New York.
-// Each Jest test file gets a fresh rate-limit bucket (10 requests); this file stays under it.
+// Each Jest test file gets a fresh rate-limit bucket (30 tokens, 10/s); this file stays under it.
 const NY_BOX = [[40.705, -74.015], [40.725, -73.995]];
 const LONDON_BOX = [[51.495, -0.13], [51.515, -0.11]];
 const NY_A = { lat: 40.7146, lng: -74.0085 };

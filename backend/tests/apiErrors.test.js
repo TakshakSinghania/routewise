@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../index');
 
-// Each Jest test file gets a fresh rate-limit bucket (10 requests); this file stays under it.
+// Each Jest test file gets a fresh rate-limit bucket (30 tokens, 10/s); this file stays under it.
 const NY = { lat: 40.7146, lng: -74.0085 };
 const NY_2 = { lat: 40.7105, lng: -74.0016 };
 const PARIS = { lat: 48.8566, lng: 2.3522 };
@@ -44,7 +44,10 @@ describe('API input validation and JSON errors', () => {
 
   test('POST /api/tsp rejects more than 25 stops before doing any routing', async () => {
     const stops = Array.from({ length: 26 }, (_, i) => ({ lat: 40.707 + (i % 6) * 0.003, lng: -74.013 + Math.floor(i / 6) * 0.004 }));
-    const res = await request(app).post('/api/tsp').send({ stops });
+    // 26 stops cost 27 of the 30 rate-limit tokens, so use a fresh app whose bucket is still full.
+    let freshApp;
+    jest.isolateModules(() => { freshApp = require('../index'); });
+    const res = await request(freshApp).post('/api/tsp').send({ stops });
     expectJsonError(res, 400);
     expect(res.body.error).toMatch(/25/);
   });

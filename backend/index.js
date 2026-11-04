@@ -12,8 +12,16 @@ app.use(express.json());
 // Express 5 leaves req.body undefined when a request has no JSON body; handlers expect an object.
 app.use((req, res, next) => { req.body ??= {}; next(); });
 
-// Apply token-bucket rate limiter to all API routes (10 req/sec max)
-app.use('/api', rateLimiter(10, 2), apiRoutes);
+// Behind a reverse proxy, req.ip is the proxy's address unless Express trusts it. Set
+// TRUST_PROXY_HOPS to the exact number of proxies in front of the app; a wrong value lets
+// clients fake their IP via X-Forwarded-For. Off by default (see README "Deploying").
+const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS, 10);
+if (trustProxyHops > 0) app.set('trust proxy', trustProxyHops);
+
+// Token bucket per client IP: bursts of 30 tokens, refilled at 10 per second. A request costs
+// 1 token plus 1 per stop, so a 25-stop TSP (~0.4 s of CPU) costs 26.
+const requestCost = (req) => 1 + (Array.isArray(req.body.stops) ? req.body.stops.length : 0);
+app.use('/api', rateLimiter(30, 10, requestCost), apiRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

@@ -30,20 +30,23 @@ class TokenBucket {
   }
 }
 
-// In-memory store mapping IPs to their token buckets
-const clients = new Map();
+// costOf(req) is how many tokens a request uses (default 1), so expensive requests count more.
+function rateLimiter(capacity, refillRatePerSec, costOf = () => 1) {
+  // In-memory store mapping IPs to their token buckets (one store per limiter)
+  const clients = new Map();
 
-function rateLimiter(capacity, refillRatePerSec) {
   return (req, res, next) => {
     const ip = req.ip || req.connection.remoteAddress;
-    
+
     if (!clients.has(ip)) {
       clients.set(ip, new TokenBucket(capacity, refillRatePerSec));
     }
-    
+
     const bucket = clients.get(ip);
-    
-    if (bucket.take()) {
+    // Capped at the bucket size so any single request can pass once the bucket is full.
+    const cost = Math.min(capacity, costOf(req));
+
+    if (bucket.take(cost)) {
       next();
     } else {
       res.status(429).json({ error: 'Too many requests, please try again later.' });
