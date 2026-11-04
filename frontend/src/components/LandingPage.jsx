@@ -51,9 +51,10 @@ export default function LandingPage({ onStart }) {
           <RouteIcon className="text-teal-400" size={32} />
           <span>Route<span className="text-teal-400">Wise</span></span>
         </div>
-        <div className="flex gap-8 text-sm font-medium text-slate-400 items-center">
-          <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
-          <a href="#benchmarks" className="hover:text-white transition-colors">Benchmarks</a>
+        {/* Below 640px (sm) only the logo and Source fit, so the two in-page links are hidden */}
+        <div className="flex gap-4 sm:gap-8 text-sm font-medium text-slate-400 items-center">
+          <a href="#how-it-works" className="hidden sm:inline hover:text-white transition-colors">How it works</a>
+          <a href="#benchmarks" className="hidden sm:inline hover:text-white transition-colors">Benchmarks</a>
           <a href="https://github.com" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
             <Code size={16} /> Source
           </a>

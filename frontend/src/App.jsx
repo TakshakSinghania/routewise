@@ -171,10 +171,11 @@ export default function App() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 relative w-full h-full flex flex-row overflow-hidden">
+      {/* Below 768px (md) the map sits on top and the controls scroll underneath; md and up unchanged */}
+      <main className="flex-1 relative w-full h-full flex flex-col md:flex-row overflow-hidden">
         
         {/* Map Container - fills available space */}
-        <div className="flex-1 relative h-full w-full z-10">
+        <div className="flex-none h-[55%] md:flex-1 md:h-full relative w-full z-10">
           {/* Placeholder in the map's own background colour while its code loads */}
           <Suspense fallback={<div className="h-full w-full bg-slate-800" />}>
             <Map
@@ -207,7 +208,7 @@ export default function App() {
         </div>
 
         {/* Floating / Docked Sidebar for Controls */}
-        <div className="w-80 h-full flex-none bg-slate-900 border-l border-slate-800 overflow-y-auto custom-scrollbar z-20 shadow-2xl relative">
+        <div className="w-full flex-1 min-h-0 md:w-80 md:h-full md:flex-none bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 overflow-y-auto custom-scrollbar z-20 shadow-2xl relative">
           <Controls 
             stops={stops}
             algorithm={algorithm}
