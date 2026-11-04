@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+export const DEFAULT_API_URL = 'http://localhost:5001/api';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api',
+  baseURL: import.meta.env.VITE_API_URL || DEFAULT_API_URL,
 });
 
 export const snapCoordinate = async (latlng, cityId) => {
