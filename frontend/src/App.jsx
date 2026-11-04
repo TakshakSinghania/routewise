@@ -100,6 +100,7 @@ export default function App() {
         totalNodesVisited += data.nodesVisited;
       }
       
+      setOptimizationSteps(null); // otherwise the previous TSP animation replays on this route
       setExploredNodes(combinedExplored);
       setRoute(combinedPath);
       setResults({ timeMs: totalTimeMs, distance: totalDistance, nodesVisited: totalNodesVisited });
@@ -118,6 +119,7 @@ export default function App() {
     setComputingState('Running TSP Optimization...');
     try {
       const data = await getOptimizedRoute(stops, cityId);
+      setExploredNodes(null); // otherwise the previous shortest-path exploration stays on the map
       setOptimizationSteps(data.optimizationSteps || []);
       setRoute(data.route);
       setResults({ timeMs: data.timeMs, distance: data.distance });
