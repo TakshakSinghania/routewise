@@ -46,7 +46,6 @@ function snapToGraph(city, point) {
     const d = haversineDist(point, { lat: node.y, lng: node.x });
     if (d < minDist) { minDist = d; closestId = node.id; }
   });
-  console.log(`snapped (${point.lat}, ${point.lng}) to ${closestId} at distance ${minDist}m`);
   return { id: closestId, distance: minDist };
 }
 
@@ -54,7 +53,6 @@ const outsideAreaError = (city) => `Location is outside the supported routing ar
 
 router.post('/snap', withCity, (req, res) => {
   const { lat, lng } = req.body;
-  console.log("SNAP REQUEST:", req.body);
   if (!isLatLng(req.body)) return res.status(400).json({ error: "Missing or invalid coordinates" });
 
   const graph = req.city.graph;
@@ -68,7 +66,6 @@ router.post('/snap', withCity, (req, res) => {
     return res.status(400).json({ error: outsideAreaError(req.city) });
   }
 
-  console.log("SNAPPED TO:", node.id, node.y, node.x);
   res.json({ lat: node.y, lng: node.x, id: node.id });
 });
 
