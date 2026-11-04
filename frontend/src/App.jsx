@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Map from './components/Map';
 import Controls from './components/Controls';
-import BenchmarkChart from './components/BenchmarkChart';
 import LandingPage from './components/LandingPage';
 import { getShortestPath, getOptimizedRoute, runBenchmark, snapCoordinate, setCity } from './api/client';
 import { Route as RouteIcon, Code } from 'lucide-react';
+
+// Leaflet and Chart.js are only downloaded when the map view opens / a benchmark is shown,
+// so the landing page does not load them.
+const Map = lazy(() => import('./components/Map'));
+const BenchmarkChart = lazy(() => import('./components/BenchmarkChart'));
 
 export default function App() {
   const [appStarted, setAppStarted] = useState(false);
@@ -172,17 +175,20 @@ export default function App() {
         
         {/* Map Container - fills available space */}
         <div className="flex-1 relative h-full w-full z-10">
-          <Map 
-            stops={stops} 
-            route={route} 
-            exploredNodes={exploredNodes}
-            optimizationSteps={optimizationSteps}
-            algorithm={algorithm}
-            onAddStop={handleAddStop}
-            position={position}
-            bounds={bounds}
-            locationName={locationName}
-          />
+          {/* Placeholder in the map's own background colour while its code loads */}
+          <Suspense fallback={<div className="h-full w-full bg-slate-800" />}>
+            <Map
+              stops={stops}
+              route={route}
+              exploredNodes={exploredNodes}
+              optimizationSteps={optimizationSteps}
+              algorithm={algorithm}
+              onAddStop={handleAddStop}
+              position={position}
+              bounds={bounds}
+              locationName={locationName}
+            />
+          </Suspense>
 
           {/* Algorithm Thinking Overlay */}
           <AnimatePresence>
@@ -216,7 +222,9 @@ export default function App() {
           />
           {benchmarkData && (
             <div className="p-4 border-t border-slate-800">
-              <BenchmarkChart data={benchmarkData} />
+              <Suspense fallback={null}>
+                <BenchmarkChart data={benchmarkData} />
+              </Suspense>
             </div>
           )}
         </div>
