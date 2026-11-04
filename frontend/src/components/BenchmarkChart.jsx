@@ -19,7 +19,7 @@ ChartJS.register(
   Legend
 );
 
-export default function BenchmarkChart({ benchmarkData }) {
+export default function BenchmarkChart({ data: benchmarkData }) {
   if (!benchmarkData) return null;
 
   const options = {
