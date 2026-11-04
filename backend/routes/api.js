@@ -1,6 +1,6 @@
 const express = require('express');
 const { dijkstra, aStar } = require('../dsa/shortestPath');
-const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP } = require('../dsa/tsp');
+const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP, planTour } = require('../dsa/tsp');
 const Route = require('../models/Route');
 const { downloadOSM } = require('../services/mapLoader');
 const { isLatLng, stopsError } = require('../validation');
@@ -30,12 +30,12 @@ function haversineDist(p1, p2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Helper to snap a lat/lng point to the closest node in our static graph.
-// Returns { id, distance } where distance is in meters.
-function snapToGraph(graph, point) {
+// Helper to snap a lat/lng point to the closest routable node of a city (its main road
+// network, so every stop can reach every other one). Returns { id, distance } in meters.
+function snapToGraph(city, point) {
   let closestId = null;
   let minDist = Infinity;
-  graph.getAllNodes().forEach(node => {
+  city.routableNodes.forEach(node => {
     const d = haversineDist(point, { lat: node.y, lng: node.x });
     if (d < minDist) { minDist = d; closestId = node.id; }
   });
@@ -51,7 +51,7 @@ router.post('/snap', withCity, (req, res) => {
   if (!isLatLng(req.body)) return res.status(400).json({ error: "Missing or invalid coordinates" });
 
   const graph = req.city.graph;
-  const snapped = snapToGraph(graph, { lat, lng });
+  const snapped = snapToGraph(req.city, { lat, lng });
   if (!snapped.id) return res.status(400).json({ error: "No nearby road found" });
 
   const node = graph.getNode(snapped.id);
@@ -91,8 +91,8 @@ router.post('/shortest-path', withCity, (req, res) => {
 
   try {
     const graph = req.city.graph;
-    const startSnap = snapToGraph(graph, start);
-    const endSnap = snapToGraph(graph, end);
+    const startSnap = snapToGraph(req.city, start);
+    const endSnap = snapToGraph(req.city, end);
     if (startSnap.distance > MAX_SNAP_DISTANCE_M || endSnap.distance > MAX_SNAP_DISTANCE_M) {
       return res.status(400).json({ error: outsideAreaError(req.city) });
     }
@@ -128,69 +128,22 @@ router.post('/tsp', withCity, (req, res) => {
     const graph = req.city.graph;
 
     // Snap all stops
-    const snapped = stops.map(stop => snapToGraph(graph, stop));
+    const snapped = stops.map(stop => snapToGraph(req.city, stop));
     const far = snapped.findIndex(s => s.distance > MAX_SNAP_DISTANCE_M);
     if (far !== -1) return res.status(400).json({ error: `Stop ${far}: ${outsideAreaError(req.city)}` });
-    const snappedIds = snapped.map(s => s.id);
 
-    // Precompute shortest paths between all pairs
-    const distanceMatrix = {};
-    snappedIds.forEach(id => distanceMatrix[id] = {});
+    // All-pairs road distances, Nearest Neighbor + 2-opt, full road path (see dsa/tsp.js)
+    const tour = planTour(graph, snapped.map(s => s.id));
+    if (tour.error) return res.status(422).json({ error: tour.error });
 
-    for (let i = 0; i < snappedIds.length; i++) {
-      for (let j = 0; j < snappedIds.length; j++) {
-        if (i === j) {
-          distanceMatrix[snappedIds[i]][snappedIds[j]] = { distance: 0, path: [snappedIds[i]] };
-        } else if (!distanceMatrix[snappedIds[i]][snappedIds[j]]) {
-          const res = dijkstra(graph, snappedIds[i], snappedIds[j]);
-          distanceMatrix[snappedIds[i]][snappedIds[j]] = { distance: res.distance, path: res.path };
-        }
-      }
-    }
+    const toCoords = ids => ids.map(id => ({ lat: graph.getNode(id).y, lng: graph.getNode(id).x }));
 
-    // TSP optimization
-    const distFn = (a, b) => distanceMatrix[a][b].distance;
-    const nnRoute = nearestNeighbor(snappedIds, distFn);
-    const { bestRoute: optimizedIds, optimizationSteps } = twoOpt(nnRoute, distFn);
-    
-    // Reconstruct full road route
-    let fullDetailedPath = [];
-    let totalDistance = 0;
-
-    for (let i = 0; i < optimizedIds.length - 1; i++) {
-      const seg = distanceMatrix[optimizedIds[i]][optimizedIds[i+1]];
-      totalDistance += seg.distance;
-      fullDetailedPath = fullDetailedPath.concat(seg.path.slice(0, -1)); 
-    }
-    const lastSeg = distanceMatrix[optimizedIds[optimizedIds.length - 1]][optimizedIds[0]];
-    totalDistance += lastSeg.distance;
-    fullDetailedPath = fullDetailedPath.concat(lastSeg.path);
-
-    const finalCoords = fullDetailedPath.map(id => ({
-      lat: graph.getNode(id).y,
-      lng: graph.getNode(id).x
-    }));
-
-    const timeMs = performance.now() - startTime;
-    
     res.json({
-      route: finalCoords,
-      optimizationSteps: optimizationSteps.map(step => {
-        let fullStepPath = [];
-        for (let i = 0; i < step.route.length - 1; i++) {
-          const seg = distanceMatrix[step.route[i]][step.route[i+1]];
-          fullStepPath = fullStepPath.concat(seg.path.slice(0, -1));
-        }
-        const lastSeg = distanceMatrix[step.route[step.route.length - 1]][step.route[0]];
-        fullStepPath = fullStepPath.concat(lastSeg.path);
-
-        return {
-          distance: step.distance,
-          route: fullStepPath.map(id => ({ lat: graph.getNode(id).y, lng: graph.getNode(id).x }))
-        };
-      }),
-      distance: totalDistance,
-      timeMs: timeMs
+      route: toCoords(tour.path),
+      optimizationSteps: tour.optimizationSteps.map(step => ({ distance: step.distance, route: toCoords(step.path) })),
+      distance: tour.distance,
+      order: tour.order, // indexes into `stops`, in visiting order, starting with the depot (0)
+      timeMs: performance.now() - startTime
     });
 
   } catch (error) {

@@ -45,6 +45,33 @@ describe('Graph and Pathfinding', () => {
   });
 });
 
+describe('Graph.largestStronglyConnectedComponent', () => {
+  test('keeps the two-way core and leaves out one-way stubs and isolated parts', () => {
+    const g = new Graph();
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach((id, i) => g.addNode(id, i, 0));
+    g.addEdge('A', 'B', 1, false);
+    g.addEdge('B', 'C', 1, false);
+    g.addEdge('C', 'D', 1, true); // D: one-way dead end (reachable, no way back)
+    g.addEdge('E', 'A', 1, true); // E: one-way entry (can leave, cannot be reached)
+    g.addEdge('G', 'H', 1, false); // G-H: a smaller separate component; F: isolated
+
+    expect([...g.largestStronglyConnectedComponent()].sort()).toEqual(['A', 'B', 'C']);
+    expect(g.getAllNodes()).toHaveLength(8); // the graph itself is not modified
+  });
+
+  test('a fully connected grid is one component', () => {
+    expect(Graph.generateGridGraph(3, 3).largestStronglyConnectedComponent().size).toBe(9);
+  });
+
+  test('handles a 200,000-node one-way cycle without recursion overflow', () => {
+    const g = new Graph();
+    const n = 200000;
+    for (let i = 0; i < n; i++) g.addNode(i, 0, 0);
+    for (let i = 0; i < n; i++) g.addEdge(i, (i + 1) % n, 1, true);
+    expect(g.largestStronglyConnectedComponent().size).toBe(n);
+  });
+});
+
 describe('TSP Approximation', () => {
   // Simple Euclidean distance for testing
   const dist = (a, b) => Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));

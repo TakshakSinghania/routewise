@@ -1,6 +1,7 @@
 /**
  * TSP Utilities
  */
+const { dijkstra } = require('./shortestPath');
 
 // Nearest Neighbor Construction Heuristic
 function nearestNeighbor(stops, distFn) {
@@ -138,9 +139,52 @@ function bruteForceTSP(stops, distanceFn) {
   return bestRoute || stops;
 }
 
+/**
+ * Plans a closed delivery tour on a road graph: shortest road paths between every pair of
+ * stops (Dijkstra), Nearest Neighbor + 2-opt over those distances, then the full road path.
+ * Stops are handled by index, so two stops on the same road node are still both visited.
+ * If any stop cannot reach another by road there is no valid tour: returns { error }.
+ * Otherwise returns { order, legs: [{ from, to, distance, path }], distance, path, optimizationSteps }.
+ */
+function planTour(graph, stopIds) {
+  const legs = stopIds.map((from, i) => stopIds.map((to, j) => {
+    if (i === j) return { distance: 0, path: [from] };
+    const { distance, path } = dijkstra(graph, from, to);
+    return { distance, path };
+  }));
+  for (let i = 0; i < stopIds.length; i++) {
+    for (let j = 0; j < stopIds.length; j++) {
+      if (legs[i][j].distance < 0) return { error: `Stop ${j} cannot be reached from stop ${i} by road.` };
+    }
+  }
+
+  const distFn = (a, b) => legs[a][b].distance;
+  const indices = stopIds.map((_, i) => i);
+  const { bestRoute: order, optimizationSteps } = twoOpt(nearestNeighbor(indices, distFn), distFn);
+
+  // Join the legs of a closed route into one road path (each leg starts where the last ended).
+  const joinLegs = (route) => route.flatMap((from, k) => {
+    const { path } = legs[from][route[(k + 1) % route.length]];
+    return k === route.length - 1 ? path : path.slice(0, -1);
+  });
+  const tourLegs = order.map((from, k) => {
+    const to = order[(k + 1) % order.length];
+    return { from, to, ...legs[from][to] };
+  });
+
+  return {
+    order,
+    legs: tourLegs,
+    distance: tourLegs.reduce((sum, leg) => sum + leg.distance, 0),
+    path: joinLegs(order),
+    optimizationSteps: optimizationSteps.map(step => ({ distance: step.distance, path: joinLegs(step.route) })),
+  };
+}
+
 module.exports = {
   nearestNeighbor,
   twoOpt,
   calculateTotalDistance,
-  bruteForceTSP
+  bruteForceTSP,
+  planTour
 };

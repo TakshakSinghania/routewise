@@ -38,6 +38,65 @@ class Graph {
     return Array.from(this.nodes.values());
   }
 
+  /**
+   * Largest strongly connected component: the biggest set of nodes where every node can
+   * reach every other one along directed edges (and so get back again).
+   * Kosaraju's algorithm with explicit stacks, so large road graphs cannot overflow the
+   * call stack. Time O(V + E). Returns a Set of node ids; the graph is not modified.
+   */
+  largestStronglyConnectedComponent() {
+    // Pass 1: record nodes in the order their depth-first search finishes (forward edges).
+    const visited = new Set();
+    const finishOrder = [];
+    for (const start of this.nodes.keys()) {
+      if (visited.has(start)) continue;
+      visited.add(start);
+      const stack = [[start, 0]]; // [node, index of the next edge to follow]
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        const edges = this.adjacencyList.get(top[0]);
+        if (top[1] < edges.length) {
+          const next = edges[top[1]++].node;
+          if (!visited.has(next)) {
+            visited.add(next);
+            stack.push([next, 0]);
+          }
+        } else {
+          finishOrder.push(top[0]);
+          stack.pop();
+        }
+      }
+    }
+
+    // Pass 2: search the reversed edges in reverse finish order; each search finds one component.
+    const reversed = new Map();
+    for (const id of this.nodes.keys()) reversed.set(id, []);
+    for (const [from, edges] of this.adjacencyList) {
+      for (const { node } of edges) reversed.get(node).push(from);
+    }
+    const assigned = new Set();
+    let largest = [];
+    for (let i = finishOrder.length - 1; i >= 0; i--) {
+      const root = finishOrder[i];
+      if (assigned.has(root)) continue;
+      assigned.add(root);
+      const component = [];
+      const stack = [root];
+      while (stack.length > 0) {
+        const id = stack.pop();
+        component.push(id);
+        for (const prev of reversed.get(id)) {
+          if (!assigned.has(prev)) {
+            assigned.add(prev);
+            stack.push(prev);
+          }
+        }
+      }
+      if (component.length > largest.length) largest = component;
+    }
+    return new Set(largest);
+  }
+
   // Helper to generate a realistic large static grid graph centered around a location
   static generateStaticCityGraph(rows = 100, cols = 100, centerLat = 40.7128, centerLng = -74.0060) {
     const graph = new Graph();

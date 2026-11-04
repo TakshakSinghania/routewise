@@ -25,13 +25,19 @@ if (fs.existsSync(dataDir)) {
         graph.addEdge(edge.source, edge.target, edge.weight, edge.isOneWay);
       });
 
+      // Stops snap only to the main road network: nodes that can reach, and be reached from,
+      // every other one. One-way stubs outside it (mostly roads cut off at the map edge) stay
+      // in the graph for routing and display, but a stop there could make a leg impossible.
+      const mainNetwork = graph.largestStronglyConnectedComponent();
+
       cityGraphs[cityId] = {
         graph: graph,
+        routableNodes: graph.getAllNodes().filter(node => mainNetwork.has(node.id)),
         name: mapData.name,
         bounds: mapData.bounds,
         center: mapData.center
       };
-      console.log(`Successfully loaded ${mapData.name} (${cityId}) with ${graph.getAllNodes().length} nodes.`);
+      console.log(`Successfully loaded ${mapData.name} (${cityId}) with ${graph.getAllNodes().length} nodes (${mainNetwork.size} routable as stops).`);
     } catch (error) {
       console.error(`Failed to load ${file}:`, error.message);
     }
