@@ -10,7 +10,8 @@
     "test": "jest",
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "postinstall": "npm rebuild sqlite3 --build-from-source"
+    "postinstall": "npm rebuild sqlite3 --build-from-source",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "keywords": [],
   "author": "",

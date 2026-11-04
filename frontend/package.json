@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "test": "vitest run",
     "check:tiles": "node scripts/check-tiles.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "axios": "^1.19.0",
