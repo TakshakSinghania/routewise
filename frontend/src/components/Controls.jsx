@@ -51,7 +51,7 @@ export default function Controls({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-200">
+    <div className="flex flex-col md:h-full bg-slate-900 text-slate-200">
       <div className="p-6 flex-1 overflow-y-auto">
         <h2 className="text-sm font-display font-bold tracking-widest text-slate-500 uppercase mb-6">Optimization Engine</h2>
         
