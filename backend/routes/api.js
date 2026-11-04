@@ -6,8 +6,13 @@ const Graph = require('../dsa/graph');
 const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP } = require('../dsa/tsp');
 const Route = require('../models/Route');
 const { downloadOSM } = require('../services/mapLoader');
+const { isLatLng, stopsError } = require('../validation');
 
 const router = express.Router();
+
+const MAX_SNAP_DISTANCE_M = 500; // clicks further than this from any road are outside the routing area
+const MAX_TSP_STOPS = 25; // TSP runs stops^2 Dijkstra searches on the event loop (25 stops ≈ 0.4 s)
+const MAX_BENCHMARK_STOPS = 10; // brute force is O(n!)
 
 // Load all real city graphs ONCE on startup from cached map data
 console.log("Loading all real city graphs from local cache...");
@@ -59,7 +64,8 @@ function haversineDist(p1, p2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Helper to snap a lat/lng point to the closest node in our static graph
+// Helper to snap a lat/lng point to the closest node in our static graph.
+// Returns { id, distance } where distance is in meters.
 function snapToGraph(point) {
   let closestId = null;
   let minDist = Infinity;
@@ -69,24 +75,25 @@ function snapToGraph(point) {
     if (d < minDist) { minDist = d; closestId = node.id; }
   });
   console.log(`snapped (${point.lat}, ${point.lng}) to ${closestId} at distance ${minDist}m`);
-  return closestId;
+  return { id: closestId, distance: minDist };
 }
+
+const outsideAreaError = () => `Location is outside the supported routing area (${currentLocationName}).`;
 
 router.post('/snap', (req, res) => {
   const { lat, lng } = req.body;
   console.log("SNAP REQUEST:", req.body);
-  if (!lat || !lng) return res.status(400).json({ error: "Missing coordinates" });
-  
-  const closestId = snapToGraph({ lat, lng });
-  if (!closestId) return res.status(400).json({ error: "No nearby road found" });
-  
+  if (!isLatLng(req.body)) return res.status(400).json({ error: "Missing or invalid coordinates" });
+
+  const snapped = snapToGraph({ lat, lng });
+  if (!snapped.id) return res.status(400).json({ error: "No nearby road found" });
+
   const graph = cityGraphs[currentCityId].graph;
-  const node = graph.getNode(closestId);
-  
+  const node = graph.getNode(snapped.id);
+
   // If user clicked far away from our downloaded map area, reject the click
-  const dist = haversineDist({ lat, lng }, { lat: node.y, lng: node.x });
-  if (dist > 500) {
-    return res.status(400).json({ error: `Location is outside the supported routing area (${currentLocationName}).` });
+  if (snapped.distance > MAX_SNAP_DISTANCE_M) {
+    return res.status(400).json({ error: outsideAreaError() });
   }
 
   console.log("SNAPPED TO:", node.id, node.y, node.x);
@@ -95,7 +102,7 @@ router.post('/snap', (req, res) => {
 
 router.post('/set-city', (req, res) => {
   const { cityId } = req.body;
-  if (!cityId || !cityGraphs[cityId]) {
+  if (typeof cityId !== 'string' || !Object.hasOwn(cityGraphs, cityId)) {
     return res.status(400).json({ error: "City not found in local cache." });
   }
 
@@ -113,12 +120,20 @@ router.post('/set-city', (req, res) => {
 });
 
 router.post('/shortest-path', (req, res) => {
-  const { start, end, algorithm } = req.body; 
-  if (!start || !end) return res.status(400).json({ error: "Missing start or end point" });
+  const { start, end, algorithm = 'Dijkstra' } = req.body;
+  if (!isLatLng(start) || !isLatLng(end)) return res.status(400).json({ error: "Missing or invalid start or end point" });
+  if (algorithm !== 'Dijkstra' && algorithm !== 'A*') {
+    return res.status(400).json({ error: "algorithm must be 'Dijkstra' or 'A*'" });
+  }
 
   try {
-    const startId = snapToGraph(start);
-    const endId = snapToGraph(end);
+    const startSnap = snapToGraph(start);
+    const endSnap = snapToGraph(end);
+    if (startSnap.distance > MAX_SNAP_DISTANCE_M || endSnap.distance > MAX_SNAP_DISTANCE_M) {
+      return res.status(400).json({ error: outsideAreaError() });
+    }
+    const startId = startSnap.id;
+    const endId = endSnap.id;
 
     const graph = cityGraphs[currentCityId].graph;
     let result = algorithm === 'A*' ? aStar(graph, startId, endId) : dijkstra(graph, startId, endId);
@@ -141,14 +156,18 @@ router.post('/shortest-path', (req, res) => {
 });
 
 router.post('/tsp', (req, res) => {
-  const { stops } = req.body; 
-  if (!stops || stops.length < 2) return res.status(400).json({ error: 'At least 2 stops required' });
+  const { stops } = req.body;
+  const invalid = stopsError(stops, 2, MAX_TSP_STOPS);
+  if (invalid) return res.status(400).json({ error: invalid });
 
   try {
     const startTime = performance.now();
-    
+
     // Snap all stops
-    const snappedIds = stops.map(stop => snapToGraph(stop));
+    const snapped = stops.map(stop => snapToGraph(stop));
+    const far = snapped.findIndex(s => s.distance > MAX_SNAP_DISTANCE_M);
+    if (far !== -1) return res.status(400).json({ error: `Stop ${far}: ${outsideAreaError()}` });
+    const snappedIds = snapped.map(s => s.id);
     
     // Precompute shortest paths between all pairs
     const distanceMatrix = {}; 
@@ -220,7 +239,8 @@ router.post('/tsp', (req, res) => {
 
 router.post('/benchmark', (req, res) => {
   const { stops } = req.body;
-  if (!stops || stops.length > 10) return res.status(400).json({ error: 'Max 10 stops for benchmark' });
+  const invalid = stopsError(stops, 2, MAX_BENCHMARK_STOPS);
+  if (invalid) return res.status(400).json({ error: invalid });
 
   // Helper: straight line dist for fast benchmarking so we don't spam Overpass API
   const distFn = (p1, p2) => haversineDist(p1, p2);

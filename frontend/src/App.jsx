@@ -103,7 +103,7 @@ export default function App() {
       setResults({ timeMs: totalTimeMs, distance: totalDistance, nodesVisited: totalNodesVisited });
     } catch (error) {
       console.error(error);
-      alert('Error running pathfinding');
+      alert(error.response?.data?.error || 'Error running pathfinding');
     } finally {
       setIsLoading(false);
       setComputingState('');
@@ -121,7 +121,7 @@ export default function App() {
       setResults({ timeMs: data.timeMs, distance: data.distance });
     } catch (error) {
       console.error(error);
-      alert('Error running TSP optimization');
+      alert(error.response?.data?.error || 'Error running TSP optimization');
     } finally {
       setIsLoading(false);
       setComputingState('');

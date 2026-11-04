@@ -17,6 +17,15 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Unknown routes and errors (including malformed JSON) get a JSON body, never an HTML stack trace.
+app.use((req, res) => res.status(404).json({ error: 'Not found' }));
+// Express treats 4-argument middleware as the error handler, so `next` must stay in the signature.
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: err.expose ? err.message : 'Internal server error' });
+});
+
 if (process.env.NODE_ENV !== 'test') {
   sequelize.sync().then(() => {
     console.log('Database synced');

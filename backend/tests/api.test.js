@@ -34,7 +34,7 @@ describe('Routewise API Endpoints', () => {
       .send({});
     
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Missing coordinates');
+    expect(res.body.error).toBe('Missing or invalid coordinates');
   });
 
   test('POST /api/benchmark calculates approximation vs exact TSP for sample stops', async () => {
