@@ -5,7 +5,7 @@ const apiRoutes = require('./routes/api');
 const sequelize = require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001; // 5000 is taken by AirPlay Receiver on recent macOS
 
 app.use(cors());
 app.use(express.json());
@@ -31,11 +31,17 @@ app.use((err, req, res, next) => {
 if (process.env.NODE_ENV !== 'test') {
   sequelize.sync().then(() => {
     console.log('Database synced');
-    app.listen(PORT, () => {
+    // Express 5 passes listen errors (e.g. EADDRINUSE) to this callback instead of throwing.
+    app.listen(PORT, (err) => {
+      if (err) {
+        console.error(`Could not start the server on port ${PORT}: ${err.code || err.message}. Set PORT to a free port.`);
+        process.exit(1);
+      }
       console.log(`Server running on port ${PORT}`);
     });
   }).catch(err => {
     console.error('Database sync failed:', err);
+    process.exit(1);
   });
 }
 

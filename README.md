@@ -148,7 +148,7 @@ $$\Delta \text{dist} = \text{dist}(u, x) + \text{dist}(v, y) - (\text{dist}(u, v
 
 ### Base URL
 ```text
-http://localhost:5000/api
+http://localhost:5001/api
 ```
 
 **City per request.** `snap`, `shortest-path` and `tsp` take an optional `cityId` (`'new_york' | 'london' | 'tokyo' | 'paris' | 'seoul'`, default `'new_york'`). The server keeps no "current city", so visitors never affect each other. An unknown `cityId` returns `400`.
@@ -259,7 +259,7 @@ cd routewise
 cd backend
 npm install
 npm test          # Executes all 10 automated unit & integration tests
-npm start         # Starts backend API on http://localhost:5000
+npm start         # Starts backend API on http://localhost:5001 (5000 is used by AirPlay on macOS)
 ```
 
 ### 3. Frontend Setup (Separate Terminal)
