@@ -67,8 +67,19 @@ function freshApp(env = {}) {
 }
 
 const NY_STOPS = Array.from({ length: 25 }, (_, i) => ({ lat: 40.707 + (i % 5) * 0.0035, lng: -74.012 + Math.floor(i / 5) * 0.0035 }));
+const realDateNow = Date.now;
 
 describe('API rate limiting', () => {
+  // Tests that expect a second request to be refused freeze the limiter's clock (Date.now), so a
+  // slow machine cannot refill the bucket between the two requests. `now` only moves when a test
+  // moves it. afterEach puts the real clock back, also when a test fails.
+  let now;
+  const freezeClock = () => {
+    now = realDateNow();
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+  };
+  afterEach(() => jest.restoreAllMocks());
+
   test('the audit UI flow (8 clicked stops, then a 7-leg shortest path) is not rate limited', async () => {
     const app = freshApp();
     const stops = NY_STOPS.slice(0, 8);
@@ -82,12 +93,24 @@ describe('API rate limiting', () => {
 
   test('a 25-stop TSP is allowed, but costs enough that an immediate second one is limited', async () => {
     const app = freshApp();
+    freezeClock();
     expect((await request(app).post('/api/tsp').send({ stops: NY_STOPS })).status).toBe(200);
     expect((await request(app).post('/api/tsp').send({ stops: NY_STOPS })).status).toBe(429);
   });
 
+  test('the allowance refills with time: 2.2 s later the 26 tokens are back', async () => {
+    const app = freshApp();
+    freezeClock();
+    expect((await request(app).post('/api/tsp').send({ stops: NY_STOPS })).status).toBe(200); // 4 tokens left
+    now += 2100; // +21 tokens = 25, one short of the 26 needed
+    expect((await request(app).post('/api/tsp').send({ stops: NY_STOPS })).status).toBe(429);
+    now += 100; // +1 token = 26
+    expect((await request(app).post('/api/tsp').send({ stops: NY_STOPS })).status).toBe(200);
+  });
+
   test('X-Forwarded-For is ignored by default, so faking it does not get a fresh allowance', async () => {
     const app = freshApp();
+    freezeClock();
     await request(app).post('/api/tsp').send({ stops: NY_STOPS }); // uses 26 of 30 tokens
     const res = await request(app).post('/api/tsp').set('X-Forwarded-For', '203.0.113.9').send({ stops: NY_STOPS });
     expect(res.status).toBe(429);
@@ -95,9 +118,14 @@ describe('API rate limiting', () => {
 
   test('with TRUST_PROXY_HOPS=1, clients behind the proxy are limited separately', async () => {
     const app = freshApp({ TRUST_PROXY_HOPS: '1' });
+    freezeClock();
     const asClient = (ip) => request(app).post('/api/tsp').set('X-Forwarded-For', ip).send({ stops: NY_STOPS });
     expect((await asClient('203.0.113.1')).status).toBe(200);
     expect((await asClient('203.0.113.1')).status).toBe(429);
     expect((await asClient('203.0.113.2')).status).toBe(200);
+  });
+
+  test('the real clock is back after the frozen-clock tests', () => {
+    expect(Date.now).toBe(realDateNow);
   });
 });
