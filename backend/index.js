@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 5001; // 5000 is taken by AirPlay Receiver on recent macOS
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' })); // larger bodies get a JSON 413
 // Express 5 leaves req.body undefined when a request has no JSON body; handlers expect an object.
 app.use((req, res, next) => { req.body ??= {}; next(); });
 

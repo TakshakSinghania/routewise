@@ -3,14 +3,21 @@ const { dijkstra, aStar } = require('../dsa/shortestPath');
 const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP, planTour } = require('../dsa/tsp');
 const Route = require('../models/Route');
 const { downloadOSM } = require('../services/mapLoader');
-const { isLatLng, stopsError } = require('../validation');
+const { isLatLng, stopsError, parseSavedRoute } = require('../validation');
 const { getCity } = require('../services/cityGraphs');
+const rateLimiter = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
 const MAX_SNAP_DISTANCE_M = 500; // clicks further than this from any road are outside the routing area
 const MAX_TSP_STOPS = 25; // TSP runs stops^2 Dijkstra searches on the event loop (25 stops ≈ 0.4 s)
 const MAX_BENCHMARK_STOPS = 10; // brute force is O(n!)
+const DEFAULT_ROUTES_PAGE = 50;
+const MAX_ROUTES_PAGE = 100;
+
+// Saved routes are stored on disk, so writes get their own, much slower allowance:
+// 10 per client per hour, on top of the general API limit.
+const writeLimiter = rateLimiter(10, 10 / 3600);
 
 // Each request names its own city (body.cityId, default New York); nothing is shared between visitors.
 function withCity(req, res, next) {
@@ -182,22 +189,35 @@ router.post('/benchmark', (req, res) => {
   });
 });
 
-// Save route
-router.post('/routes', async (req, res) => {
+// Save route. Unauthenticated: anyone can save and list routes (see README).
+// Validation runs before the write limit, so rejected requests do not use up the allowance.
+router.post('/routes', (req, res, next) => {
+  const parsed = parseSavedRoute(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  req.savedRoute = parsed.route;
+  next();
+}, writeLimiter, async (req, res, next) => {
   try {
-    const route = await Route.create(req.body);
+    // `fields` limits the insert to the validated columns (no client-chosen id or timestamps).
+    const route = await Route.create(req.savedRoute, { fields: Object.keys(req.savedRoute) });
     res.json(route);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error); // generic JSON 500, without database details
   }
 });
 
-router.get('/routes', async (req, res) => {
+// List saved routes, newest first: ?limit= (1-100, default 50) and ?offset= (default 0).
+router.get('/routes', async (req, res, next) => {
+  const limit = req.query.limit === undefined ? DEFAULT_ROUTES_PAGE : Number(req.query.limit);
+  const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ROUTES_PAGE || !Number.isInteger(offset) || offset < 0) {
+    return res.status(400).json({ error: `limit must be an integer from 1 to ${MAX_ROUTES_PAGE}, offset an integer >= 0.` });
+  }
   try {
-    const routes = await Route.findAll({ order: [['createdAt', 'DESC']] });
+    const routes = await Route.findAll({ order: [['createdAt', 'DESC'], ['id', 'DESC']], limit, offset });
     res.json(routes);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 

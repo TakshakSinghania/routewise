@@ -240,6 +240,21 @@ Straight-line (Haversine) distances, so the exact brute-force solver stays fast.
 }
 ```
 
+#### 6. Saved Routes
+`POST /api/routes` · `GET /api/routes?limit=50&offset=0`
+
+> [!WARNING]
+> **Not production-secure.** This endpoint is **unauthenticated**: anyone can save routes and list every saved route. Routes are stored in a local **SQLite file, which is not durable on Render** (the disk is reset on every deploy and restart). Treat it as a demo feature until authentication and persistent storage are added.
+
+- **Allowed fields only:** `name` (1–100 characters), `algorithm` (`'Dijkstra' | 'A*' | 'TSP'`), `distance` (number ≥ 0), `stops` (2–25 `{ lat, lng }` points, required), `path` (up to 2,000 points). Any other field, including `id` or timestamps, is rejected with `400`.
+- **Limits:** request bodies up to 100 kB (larger: `413`); 10 saves per client per hour (then `429`); invalid requests do not count toward that.
+- **Listing:** newest first; `limit` 1–100 (default 50), `offset` ≥ 0. Returns a JSON array.
+
+```json
+// Request
+{ "name": "Morning deliveries", "algorithm": "TSP", "distance": 3466.7, "stops": [{ "lat": 40.7146, "lng": -74.0085 }, { "lat": 40.7105, "lng": -74.0016 }] }
+```
+
 ---
 
 ## Local Development & Setup
