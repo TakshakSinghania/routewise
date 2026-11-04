@@ -1,7 +1,7 @@
 /**
  * TSP Utilities
  */
-const { dijkstra } = require('./shortestPath');
+const { dijkstraToMany } = require('./shortestPath');
 
 // Nearest Neighbor Construction Heuristic
 function nearestNeighbor(stops, distFn) {
@@ -145,11 +145,8 @@ function bruteForceTSP(stops, distanceFn) {
  * Otherwise returns { order, legs: [{ from, to, distance, path }], distance, path, optimizationSteps }.
  */
 function planTour(graph, stopIds) {
-  const legs = stopIds.map((from, i) => stopIds.map((to, j) => {
-    if (i === j) return { distance: 0, path: [from] };
-    const { distance, path } = dijkstra(graph, from, to);
-    return { distance, path };
-  }));
+  // legs[i][j]: shortest road path from stop i to stop j; one search per stop covers a whole row.
+  const legs = stopIds.map(from => dijkstraToMany(graph, from, stopIds));
   for (let i = 0; i < stopIds.length; i++) {
     for (let j = 0; j < stopIds.length; j++) {
       if (legs[i][j].distance < 0) return { error: `Stop ${j} cannot be reached from stop ${i} by road.` };

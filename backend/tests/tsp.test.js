@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../index');
 const Graph = require('../dsa/graph');
-const { aStar, dijkstra } = require('../dsa/shortestPath');
+const { aStar, dijkstra, dijkstraToMany } = require('../dsa/shortestPath');
 const { planTour, nearestNeighbor, twoOpt, calculateTotalDistance } = require('../dsa/tsp');
 const { cityGraphs } = require('../services/cityGraphs');
 
@@ -82,6 +82,31 @@ describe('planTour on the real city graphs', () => {
     const [a, b, c] = [routableNodes[10].id, routableNodes[500].id, routableNodes[2000].id];
     const stopIds = [a, b, b, c];
     expectValidTour(graph, stopIds, planTour(graph, stopIds));
+  });
+});
+
+describe('dijkstraToMany on the real city graphs', () => {
+  test('gives the same distances as one dijkstra() per pair, along valid road paths', () => {
+    const random = rng(2024);
+    for (const cityId of Object.keys(cityGraphs).sort()) {
+      const { graph, routableNodes } = cityGraphs[cityId];
+      const ids = Array.from({ length: 6 }, () => routableNodes[Math.floor(random() * routableNodes.length)].id);
+      for (const start of ids) {
+        dijkstraToMany(graph, start, ids).forEach((result, i) => {
+          // Distances must agree; paths may legitimately differ when two routes cost the same.
+          expect(result.distance).toBeCloseTo(dijkstra(graph, start, ids[i]).distance, 6);
+          expect(result.path[0]).toBe(start);
+          expect(result.path[result.path.length - 1]).toBe(ids[i]);
+          let walked = 0;
+          for (let k = 0; k + 1 < result.path.length; k++) {
+            const w = edgeWeight(graph, result.path[k], result.path[k + 1]);
+            expect(w).toBeDefined();
+            walked += w;
+          }
+          expect(result.distance).toBeCloseTo(walked, 6);
+        });
+      }
+    }
   });
 });
 

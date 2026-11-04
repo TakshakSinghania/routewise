@@ -1,6 +1,6 @@
 const MinHeap = require('../dsa/heap');
 const Graph = require('../dsa/graph');
-const { dijkstra, aStar } = require('../dsa/shortestPath');
+const { dijkstra, aStar, dijkstraToMany } = require('../dsa/shortestPath');
 const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP } = require('../dsa/tsp');
 
 describe('MinHeap', () => {
@@ -42,6 +42,89 @@ describe('Graph and Pathfinding', () => {
     expect(aStarResult.path.length).toBe(5);
     // A* typically explores fewer nodes in a grid with Euclidean heuristic
     expect(aStarResult.exploredNodes.length).toBeLessThanOrEqual(dijkstraResult.exploredNodes.length);
+  });
+});
+
+describe('dijkstraToMany (one search, several targets)', () => {
+  // Checks a returned path on its own terms: right endpoints, real directed edges, and edge
+  // weights adding up to the distance. It never requires one particular node sequence, because
+  // equal-cost alternatives are equally correct.
+  function expectValidPath(graph, start, target, { distance, path }) {
+    expect(path[0]).toBe(start);
+    expect(path[path.length - 1]).toBe(target);
+    let walked = 0;
+    for (let i = 0; i + 1 < path.length; i++) {
+      const edges = graph.getNeighbors(path[i]).filter(e => e.node === path[i + 1]);
+      expect(edges.length).toBeGreaterThan(0);
+      walked += Math.min(...edges.map(e => e.weight));
+    }
+    expect(distance).toBeCloseTo(walked, 9);
+  }
+
+  function oneWayGraph() {
+    const g = new Graph();
+    ['A', 'B', 'C', 'D', 'E'].forEach((id, i) => g.addNode(id, i, 0));
+    g.addEdge('A', 'B', 1, false);
+    g.addEdge('B', 'C', 2, false);
+    g.addEdge('C', 'D', 4, true); // D: reachable, but a dead end
+    g.addEdge('E', 'A', 1, true); // E: can leave, but cannot be reached
+    return g;
+  }
+
+  test('returns distance and path for every reachable target, in target order', () => {
+    const g = oneWayGraph();
+    const [b, d, c] = dijkstraToMany(g, 'A', ['B', 'D', 'C']);
+    expect(b.distance).toBe(1);
+    expect(d.distance).toBe(7);
+    expect(c.distance).toBe(3);
+    expectValidPath(g, 'A', 'B', b);
+    expectValidPath(g, 'A', 'D', d);
+    expectValidPath(g, 'A', 'C', c);
+  });
+
+  test('an unreachable target gets distance -1 and an empty path, like dijkstra()', () => {
+    const g = oneWayGraph();
+    const [e, c] = dijkstraToMany(g, 'A', ['E', 'C']);
+    expect(e).toEqual({ distance: -1, path: [] });
+    expect(dijkstra(g, 'A', 'E').distance).toBe(-1);
+    expect(c.distance).toBe(3); // other targets in the same call are unaffected
+
+    const fromDeadEnd = dijkstraToMany(g, 'D', ['A', 'B']);
+    expect(fromDeadEnd).toEqual([{ distance: -1, path: [] }, { distance: -1, path: [] }]);
+  });
+
+  test('the start itself and repeated targets are handled', () => {
+    const g = oneWayGraph();
+    const result = dijkstraToMany(g, 'A', ['A', 'C', 'C', 'A']);
+    expect(result[0]).toEqual({ distance: 0, path: ['A'] });
+    expect(result[3]).toEqual({ distance: 0, path: ['A'] });
+    expect(result[1].distance).toBe(3);
+    expect(result[2].distance).toBe(3);
+  });
+
+  test('with two equally short routes, either valid path is accepted', () => {
+    // S -> X -> T and S -> Y -> T both cost 2.
+    const g = new Graph();
+    ['S', 'X', 'Y', 'T'].forEach((id, i) => g.addNode(id, i, 0));
+    g.addEdge('S', 'X', 1, false);
+    g.addEdge('X', 'T', 1, false);
+    g.addEdge('S', 'Y', 1, false);
+    g.addEdge('Y', 'T', 1, false);
+    const [t] = dijkstraToMany(g, 'S', ['T']);
+    expect(t.distance).toBe(2);
+    expect([['S', 'X', 'T'], ['S', 'Y', 'T']]).toContainEqual(t.path);
+    expectValidPath(g, 'S', 'T', t);
+  });
+
+  test('matches dijkstra() for every pair on a grid full of equal-cost routes', () => {
+    const g = Graph.generateGridGraph(4, 4);
+    const ids = g.getAllNodes().map(n => n.id);
+    for (const start of ids) {
+      dijkstraToMany(g, start, ids).forEach((result, i) => {
+        expect(result.distance).toBe(dijkstra(g, start, ids[i]).distance);
+        expectValidPath(g, start, ids[i], result);
+      });
+    }
   });
 });
 

@@ -54,6 +54,45 @@ function dijkstra(graph, startNode, endNode) {
 }
 
 /**
+ * Shortest paths from one start node to several targets with a single Dijkstra search, which
+ * stops once every target is settled (used to build the TSP distance table: one search per stop
+ * instead of one per pair). Returns one { distance, path } per target, in target order; an
+ * unreachable target gets distance -1 and an empty path, as in dijkstra().
+ */
+function dijkstraToMany(graph, startNode, targets) {
+  const distances = new Map([[startNode, 0]]);
+  const previous = new Map();
+  const visited = new Set();
+  const remaining = new Set(targets);
+  const pq = new MinHeap(el => el.priority);
+  pq.push({ id: startNode, priority: 0 });
+
+  while (!pq.isEmpty() && remaining.size > 0) {
+    const current = pq.pop();
+    if (visited.has(current.id)) continue;
+    visited.add(current.id);
+    remaining.delete(current.id);
+
+    for (const neighbor of graph.getNeighbors(current.id)) {
+      if (visited.has(neighbor.node)) continue;
+      const candidateDistance = distances.get(current.id) + neighbor.weight;
+      if (candidateDistance < (distances.get(neighbor.node) ?? Infinity)) {
+        distances.set(neighbor.node, candidateDistance);
+        previous.set(neighbor.node, current.id);
+        pq.push({ id: neighbor.node, priority: candidateDistance });
+      }
+    }
+  }
+
+  return targets.map(target => {
+    if (!visited.has(target)) return { distance: -1, path: [] };
+    const path = [];
+    for (let node = target; node !== undefined; node = previous.get(node)) path.unshift(node);
+    return { distance: distances.get(target), path };
+  });
+}
+
+/**
  * Haversine distance heuristic for A*
  */
 function heuristic(nodeA, nodeB) {
@@ -151,6 +190,7 @@ function reconstructPath(previous, endNode, nodesVisited, totalDistance, computa
 
 module.exports = {
   dijkstra,
+  dijkstraToMany,
   aStar,
   heuristic
 };
