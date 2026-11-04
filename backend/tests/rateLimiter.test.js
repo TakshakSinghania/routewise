@@ -129,3 +129,136 @@ describe('API rate limiting', () => {
     expect(Date.now).toBe(realDateNow);
   });
 });
+
+// --- Client keys (S3) ---------------------------------------------------------------------
+
+describe('client keys', () => {
+  const { clientKey } = rateLimiter;
+
+  test.each([
+    ['IPv4 stays as is', '203.0.113.5', '203.0.113.5'],
+    ['IPv4-mapped IPv6 counts as the IPv4 address', '::ffff:203.0.113.5', '203.0.113.5'],
+    ['IPv4-mapped, uppercase', '::FFFF:203.0.113.5', '203.0.113.5'],
+    ['IPv4-mapped, fully written out', '0:0:0:0:0:ffff:203.0.113.5', '203.0.113.5'],
+    ['IPv4-mapped, hex form', '::ffff:cb00:7105', '203.0.113.5'],
+    ['IPv6 grouped by /64', '2001:db8:1:2::1', '2001:db8:1:2::/64'],
+    ['IPv6, other host in the same /64', '2001:db8:1:2:ffff:ffff:ffff:ffff', '2001:db8:1:2::/64'],
+    ['IPv6, uppercase', '2001:DB8:1:2::ABCD', '2001:db8:1:2::/64'],
+    ['IPv6, expanded with leading zeros', '2001:0db8:0001:0002:0000:0000:0000:0001', '2001:db8:1:2::/64'],
+    ['IPv6, compressed in the first half', '2001:db8::1', '2001:db8:0:0::/64'],
+    ['IPv6 with a zone identifier', 'fe80::1%eth0', 'fe80:0:0:0::/64'],
+    ['IPv6, other zone identifier, same /64', 'fe80::2%en0', 'fe80:0:0:0::/64'],
+    ['missing address', undefined, 'unknown'],
+  ])('%s: %s -> %s', (_, ip, key) => expect(clientKey(ip)).toBe(key));
+
+  test.each([
+    ['neighbouring IPv4 addresses', '203.0.113.5', '203.0.113.6'],
+    ['neighbouring IPv4-mapped addresses', '::ffff:203.0.113.5', '::ffff:203.0.113.6'],
+    ['neighbouring /64 blocks', '2001:db8:1:2::1', '2001:db8:1:3::1'],
+    ['different /48 prefixes', '2001:db8::1', '2001:db9::1'],
+    ['::fffe: is not IPv4-mapped', '::fffe:203.0.113.5', '203.0.113.5'],
+    ['an IPv4 address and an IPv6 address with the same digits', '1.2.3.4', '::102:304'],
+    ['IPv4-mapped and an IPv6 host that only ends with ffff', '::ffff:1.2.3.4', '1:2:3:4::ffff:102:304'],
+  ])('keeps apart %s', (_, a, b) => expect(clientKey(a)).not.toBe(clientKey(b)));
+});
+
+describe('shared and separate allowances', () => {
+  beforeEach(() => jest.spyOn(Date, 'now').mockReturnValue(1_000_000));
+  afterEach(() => jest.restoreAllMocks());
+
+  test('an IPv4 client and its IPv4-mapped form share one allowance', () => {
+    const limiter = rateLimiter(30, 10, (req) => req.cost);
+    expect(send(limiter, { ip: '::ffff:203.0.113.5', cost: 30 })).toBe(200);
+    expect(send(limiter, { ip: '203.0.113.5', cost: 1 })).toBe(429);
+  });
+
+  test('addresses in one IPv6 /64 share one allowance', () => {
+    const limiter = rateLimiter(30, 10, (req) => req.cost);
+    expect(send(limiter, { ip: '2001:db8:1:2::1', cost: 30 })).toBe(200);
+    expect(send(limiter, { ip: '2001:DB8:1:2:abcd::99', cost: 1 })).toBe(429);
+  });
+
+  test('different IPv6 /64 blocks get separate allowances', () => {
+    const limiter = rateLimiter(30, 10, (req) => req.cost);
+    expect(send(limiter, { ip: '2001:db8:1:2::1', cost: 30 })).toBe(200);
+    expect(send(limiter, { ip: '2001:db8:1:3::1', cost: 30 })).toBe(200);
+  });
+
+  test('concurrent requests from one client never exceed the allowance', () => {
+    const limiter = rateLimiter(30, 10, () => 1);
+    const statuses = Array.from({ length: 40 }, () => send(limiter, { ip: '203.0.113.9' }));
+    expect(statuses.filter((s) => s === 200)).toHaveLength(30);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(10);
+  });
+});
+
+describe('idle-bucket cleanup (not a hard memory cap)', () => {
+  beforeEach(() => jest.useFakeTimers({ now: 1_000_000 }));
+  afterEach(() => jest.useRealTimers());
+
+  test('a bucket that has refilled completely is removed by the next sweep', () => {
+    const limiter = rateLimiter(30, 10, () => 1);
+    send(limiter, { ip: '203.0.113.20' });
+    expect(limiter.clientCount()).toBe(1);
+    jest.advanceTimersByTime(59_000);
+    expect(limiter.clientCount()).toBe(1); // no sweep yet
+    jest.advanceTimersByTime(1_000);
+    expect(limiter.clientCount()).toBe(0);
+  });
+
+  test('a partly used bucket survives the sweep and stays limited (no allowance reset)', () => {
+    const limiter = rateLimiter(10, 10 / 3600, () => 1); // the saved-routes write limit
+    for (let i = 0; i < 10; i++) send(limiter, { ip: '203.0.113.21' });
+    jest.advanceTimersByTime(60_000); // sweep runs; only ~0.17 tokens are back
+    expect(limiter.clientCount()).toBe(1);
+    expect(send(limiter, { ip: '203.0.113.21' })).toBe(429);
+    jest.advanceTimersByTime(3_600_000); // fully refilled, then removed by a sweep
+    expect(limiter.clientCount()).toBe(0);
+    expect(send(limiter, { ip: '203.0.113.21' })).toBe(200);
+  });
+
+  test('refill still works across sweeps', () => {
+    const limiter = rateLimiter(30, 10, (req) => req.cost);
+    expect(send(limiter, { ip: '203.0.113.22', cost: 30 })).toBe(200);
+    jest.advanceTimersByTime(1_000); // +10 tokens
+    expect(send(limiter, { ip: '203.0.113.22', cost: 10 })).toBe(200);
+    expect(send(limiter, { ip: '203.0.113.22', cost: 1 })).toBe(429);
+  });
+
+  test('entries from many distinct clients are released once they go idle', () => {
+    const limiter = rateLimiter(30, 10, () => 1);
+    for (let i = 0; i < 100_000; i++) send(limiter, { ip: `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}` });
+    expect(limiter.clientCount()).toBe(100_000);
+    jest.advanceTimersByTime(60_000);
+    expect(limiter.clientCount()).toBe(0);
+  });
+
+  test('many addresses inside one IPv6 /64 use a single entry', () => {
+    const limiter = rateLimiter(30, 10, () => 0);
+    for (let i = 0; i < 100_000; i++) send(limiter, { ip: `2001:db8:1:2:0:0:${(i >> 16).toString(16)}:${(i & 0xffff).toString(16)}` });
+    expect(limiter.clientCount()).toBe(1);
+  });
+});
+
+describe('cleanup timer', () => {
+  test('does not keep the process alive', () => {
+    const { spawnSync } = require('child_process');
+    const script = `require(${JSON.stringify(require.resolve('../middleware/rateLimiter'))})(30, 10);`;
+    const started = Date.now();
+    const result = spawnSync(process.execPath, ['-e', script], { timeout: 10_000 });
+    expect(result.status).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe('concurrent HTTP requests', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test('40 parallel requests: exactly 30 pass the limiter', async () => {
+    const app = freshApp();
+    jest.spyOn(Date, 'now').mockReturnValue(Date.now()); // no refill during the burst
+    const statuses = await Promise.all(Array.from({ length: 40 }, () => request(app).post('/api/snap').send({})));
+    expect(statuses.filter((r) => r.status === 429)).toHaveLength(10);
+    expect(statuses.filter((r) => r.status === 400)).toHaveLength(30); // passed the limiter, then failed validation
+  });
+});
