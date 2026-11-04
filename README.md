@@ -14,7 +14,7 @@
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg?logo=react)](https://react.dev/)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900.svg?logo=leaflet)](https://leafletjs.com/)
 [![OpenStreetMap](https://img.shields.io/badge/OSM-Overpass_API-7EBC6F.svg?logo=openstreetmap)](https://www.openstreetmap.org/)
-[![Jest Tests](https://img.shields.io/badge/Tests-10_Passing-brightgreen.svg)](https://jestjs.io/)
+[![Tests](https://img.shields.io/badge/Tests-Jest_%26_Vitest-brightgreen.svg)](#automated-testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > [!IMPORTANT]
@@ -36,6 +36,7 @@
 - [API Reference](#api-reference)
 - [Local Development & Setup](#local-development--setup)
 - [Automated Testing](#automated-testing)
+- [Deploying](#deploying)
 - [License](#license)
 
 ---
@@ -71,7 +72,7 @@ Traditional mapping libraries rely on opaque black-box APIs. **RouteWise** imple
 |                                 CORE API SERVER                                   |
 |                             (Node.js + Express.js)                                |
 |                                                                                   |
-|  - Token Bucket Rate Limiter (10 req/s)    - Coordinate Snap-To-Road Engine       |
+|  - Weighted Token-Bucket Rate Limiter      - Coordinate Snap-To-Road Engine       |
 |  - Multi-City Graph Cache Store            - Route Serialization (Sequelize)      |
 +------------------------+-----------------------------------+----------------------+
                          |                                   |
@@ -97,7 +98,7 @@ Traditional mapping libraries rely on opaque black-box APIs. **RouteWise** imple
 | **Styling & Charts** | Tailwind CSS / Chart.js | 3.x / 4.x | Dark glassmorphism theme & algorithmic runtime benchmarks |
 | **Backend API** | Node.js / Express.js | 20+ / 5.x | REST API routing and asynchronous algorithm execution |
 | **ORM & Database** | Sequelize / SQLite3 | 6.x | Persistence store for saved routes and benchmark logs |
-| **Testing** | Jest / Supertest | 30.x | Unit and API integration test suites (10 tests) |
+| **Testing** | Jest / Supertest | 30.x | Unit, API integration, regression and startup tests (backend); Vitest (frontend) |
 
 ---
 
@@ -273,7 +274,7 @@ cd routewise
 ```bash
 cd backend
 npm install
-npm test          # Executes all 10 automated unit & integration tests
+npm test          # Runs the backend test suite (unit, API and regression tests)
 npm start         # Starts backend API on http://localhost:5001 (5000 is used by AirPlay on macOS)
 ```
 
@@ -290,15 +291,44 @@ npm run dev       # Starts Vite React application on http://localhost:5173
 
 ```bash
 cd backend
-npm test
+npm test             # Jest + Supertest
+npm run audit:prod   # fails on high/critical advisories in production dependencies
 ```
 
-Executes 10 tests across:
-* **Binary MinHeap**: Priority verification, element insertions, and $O(\log N)$ extraction.
-* **Graph Structure**: Grid graph generation, vertex connectivity, and bidirectional edge handling.
-* **Pathfinding Invariants**: Shortest-path verification for Dijkstra and A* heuristics.
-* **TSP Approximations**: Nearest Neighbor valid tour generation and 2-Opt edge minimization.
-* **API Integration**: Endpoint validation for `/health`, `/api/set-city`, `/api/snap`, and `/api/benchmark`.
+```bash
+cd frontend
+npm test             # Vitest
+npm run check:tiles  # needs internet: fetches one real map tile (not part of npm test)
+```
+
+The backend suite covers:
+* **Data structures and algorithms**: the MinHeap, Dijkstra/A* agreement, strongly connected components, Nearest Neighbor, and 2-opt (including one-way streets, where it must never lengthen a tour).
+* **TSP tours on the real city graphs**: every stop visited once, depot first and last, every leg a real road path, and distance equal to the sum of the legs.
+* **API behaviour**: input validation and JSON errors, per-request `cityId` with two visitors at once, rate limiting, saved-route validation and pagination, and server startup on a busy port.
+
+`node backend/scripts/smoke.mjs <baseUrl>` is a read-only smoke test for a running backend (local or deployed).
+
+---
+
+## Deploying
+
+The backend runs on Render and the frontend on Vercel. **Deploy both together**: the frontend sends `cityId` with every request, and an older frontend would route every request to New York.
+
+| Where | Variable | Value |
+|---|---|---|
+| Render (backend) | `NODE_ENV` | `production` |
+| Render (backend) | `PORT` | set by Render |
+| Render (backend) | `TRUST_PROXY_HOPS` | **leave unset** until measured (below) |
+| Vercel (frontend) | `VITE_API_URL` | `https://<your-backend>.onrender.com/api` |
+
+**Rate limiting and proxies.** Each client gets 30 tokens, refilled at 10 per second; a request costs 1 token plus 1 per stop (saved-route writes are also limited to 10 per hour). Behind Render's proxy, Express sees the proxy's address unless `TRUST_PROXY_HOPS` is set to the exact number of proxies, so with it unset, visitors may share one allowance. A wrong value is worse: clients could fake their IP with `X-Forwarded-For`. To find the right value, set `TRUST_PROXY_HOPS=1`, deploy, then:
+1. From your network, send about 35 quick requests (for example `POST /api/snap`) until you get `429`.
+2. Immediately send one more with a made-up header, `X-Forwarded-For: 203.0.113.7`. It must also get `429`; a `200` means the value is too high (spoofable).
+3. From a different network (such as a phone hotspot), send one request. It must get `200`; a `429` means the value is too low (clients still share an allowance).
+
+Keep the value only if both checks pass; otherwise unset it.
+
+After deploying, run `node backend/scripts/smoke.mjs https://<your-backend>.onrender.com`.
 
 ---
 
