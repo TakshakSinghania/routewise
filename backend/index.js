@@ -7,6 +7,18 @@ const sequelize = require('./db');
 const app = express();
 const PORT = process.env.PORT || 5001; // 5000 is taken by AirPlay Receiver on recent macOS
 
+// Browser origins allowed to call the API. CORS_ORIGINS (comma-separated, exact) replaces this
+// built-in list of our own frontends: production on Vercel, and Vite dev (5173) and preview (4173).
+const DEFAULT_CORS_ORIGINS = ['https://routewise-seven.vercel.app', 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173'];
+const configuredOrigins = (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+for (const origin of configuredOrigins) {
+  // Exactly what a browser sends: http(s), lowercase host, no default port, no path or trailing slash.
+  if (!(URL.canParse(origin) && /^https?:\/\//.test(origin) && new URL(origin).origin === origin)) {
+    throw new Error(`CORS_ORIGINS: "${origin}" is not an exact origin such as https://example.com`);
+  }
+}
+const allowedOrigins = new Set(configuredOrigins.length > 0 ? configuredOrigins : DEFAULT_CORS_ORIGINS);
+
 app.disable('x-powered-by');
 // Security headers for this JSON-only API. Set first, so errors, 404s, 429s and CORS preflights get them too.
 app.use((req, res, next) => {
@@ -23,9 +35,18 @@ app.use((req, res, next) => {
   if (req.secure || req.get('X-Forwarded-Proto') === 'https') {
     res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
+  res.vary('Origin'); // CORS answers depend on Origin, so caches must not reuse them across origins
   next();
 });
-app.use(cors());
+// Requests without an Origin (curl, health checks) get no CORS headers. Listed origins are echoed
+// back; any other browser origin gets a JSON 403 before body parsing and rate limiting.
+app.use(cors({
+  origin(origin, callback) {
+    if (origin === undefined) return callback(null, false);
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    callback(Object.assign(new Error('Origin not allowed'), { status: 403, expose: true }));
+  },
+}));
 app.use(express.json({ limit: '100kb' })); // larger bodies get a JSON 413
 // Express 5 leaves req.body undefined when a request has no JSON body; handlers expect an object.
 app.use((req, res, next) => { req.body ??= {}; next(); });

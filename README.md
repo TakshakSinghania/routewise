@@ -285,6 +285,8 @@ npm install
 npm run dev       # Starts Vite React application on http://localhost:5173
 ```
 
+The backend accepts browser requests only from the origins in `CORS_ORIGINS` (see [Deploying](#deploying)). Unset, that is the production frontend plus Vite on `localhost`/`127.0.0.1` ports 5173 (`npm run dev`) and 4173 (`npm run preview`). If Vite starts on another port (it moves to 5174 when 5173 is busy), the API answers `403 Origin not allowed`: free the port, or list the origin in `backend/.env`.
+
 ---
 
 ## Automated Testing
@@ -318,8 +320,11 @@ The backend runs on Render and the frontend on Vercel. **Deploy both together**:
 |---|---|---|
 | Render (backend) | `NODE_ENV` | `production` |
 | Render (backend) | `PORT` | set by Render |
+| Render (backend) | `CORS_ORIGINS` | `https://routewise-seven.vercel.app` (plus any custom domain of the frontend) |
 | Render (backend) | `TRUST_PROXY_HOPS` | **leave unset** until measured (below) |
 | Vercel (frontend) | `VITE_API_URL` | `https://<your-backend>.onrender.com/api` |
+
+**Allowed browser origins (CORS).** `CORS_ORIGINS` is a comma-separated list of exact origins (`https://host[:port]`, no path or trailing slash); an invalid entry stops the server at startup. A browser request from any other origin, including other Vercel URLs of the project and preview deployments, gets `403 Origin not allowed` before it is processed or rate limited. Unset or empty, the list is the production frontend plus Vite on localhost (ports 5173 and 4173); set it in production so only the real frontend is listed. CORS only binds browsers: scripts can still call the API without an `Origin` header, so the rate limit stays the abuse control.
 
 **Rate limiting and proxies.** Each client gets 30 tokens, refilled at 10 per second; a request costs 1 token plus 1 per stop (saved-route writes are also limited to 10 per hour). Behind Render's proxy, Express sees the proxy's address unless `TRUST_PROXY_HOPS` is set to the exact number of proxies, so with it unset, visitors may share one allowance. A wrong value is worse: clients could fake their IP with `X-Forwarded-For`. To find the right value, set `TRUST_PROXY_HOPS=1`, deploy, then:
 1. From your network, send about 35 quick requests (for example `POST /api/snap`) until you get `429`.

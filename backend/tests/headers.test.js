@@ -37,7 +37,8 @@ describe('security headers on every kind of response', () => {
     ['400 malformed JSON', (a) => request(a).post('/api/snap').set('Content-Type', 'application/json').send('{"lat":'), 400],
     ['413 oversized body', (a) => request(a).post('/api/snap').set('Content-Type', 'application/json').send(JSON.stringify({ pad: 'x'.repeat(120 * 1024) })), 413],
     ['404 unknown route', (a) => request(a).get('/api/does-not-exist'), 404],
-    ['204 CORS preflight', (a) => request(a).options('/api/snap').set('Origin', 'https://example.com').set('Access-Control-Request-Method', 'POST'), 204],
+    ['204 CORS preflight', (a) => request(a).options('/api/snap').set('Origin', 'https://routewise-seven.vercel.app').set('Access-Control-Request-Method', 'POST'), 204],
+    ['403 CORS origin not allowed', (a) => request(a).post('/api/snap').set('Origin', 'https://example.com').send({ ...NY, cityId: 'new_york' }), 403],
   ])('%s', async (_, send, status) => {
     const res = await send(app);
     expect(res.status).toBe(status);
@@ -50,11 +51,6 @@ describe('security headers on every kind of response', () => {
     const res = await request(app).get('/api/routes');
     expect(res.status).toBe(500);
     expectSecurityHeaders(res);
-  });
-
-  test('CORS still allows the frontend (unchanged in this stage)', async () => {
-    const res = await request(app).get('/health').set('Origin', 'https://routewise-seven.vercel.app');
-    expect(res.headers['access-control-allow-origin']).toBe('*');
   });
 });
 

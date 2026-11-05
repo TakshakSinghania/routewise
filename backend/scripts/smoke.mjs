@@ -40,6 +40,19 @@ console.log(`RouteWise smoke test against ${base}\n`);
 const health = await call('/health');
 check('GET /health', health.status === 200 && health.json?.status === 'ok', `HTTP ${health.status}`);
 
+// CORS: the production frontend may call the API from a browser; other origins get a 403.
+const FRONTEND = 'https://routewise-seven.vercel.app';
+const preflight = (origin) => fetch(base + '/api/snap', {
+  method: 'OPTIONS',
+  headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
+});
+const corsOk = await preflight(FRONTEND);
+check('CORS preflight from the production frontend', corsOk.status === 204
+  && corsOk.headers.get('access-control-allow-origin') === FRONTEND, `HTTP ${corsOk.status}`);
+const corsDenied = await preflight('https://example.invalid');
+check('CORS preflight from another origin -> 403', corsDenied.status === 403
+  && corsDenied.headers.get('access-control-allow-origin') === null, `HTTP ${corsDenied.status}`);
+
 const meta = {};
 for (const cityId of CITIES) {
   const city = await call('/api/set-city', { cityId });
