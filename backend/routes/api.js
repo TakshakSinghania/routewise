@@ -253,4 +253,23 @@ router.get('/routes', requireAdminKey, async (req, res, next) => {
   }
 });
 
+// Temporary aid for measuring TRUST_PROXY_HOPS (README "Deploying"): shows the caller how its own
+// request reaches the app, without turning proxy trust on. Exists only with PROXY_DIAGNOSTICS=1 and
+// the admin key. chain = [socket address, ...X-Forwarded-For from right to left]; Express counts
+// hops the same way, so chain[n] is what req.ip would be with TRUST_PROXY_HOPS=n.
+if (process.env.PROXY_DIAGNOSTICS === '1') {
+  router.get('/debug/proxy', requireAdminKey, (req, res) => {
+    const forwardedFor = req.get('X-Forwarded-For') ?? null;
+    res.json({
+      socket: req.socket.remoteAddress,
+      xForwardedFor: forwardedFor,
+      cfConnectingIp: req.get('CF-Connecting-IP') ?? null,
+      xForwardedProto: req.get('X-Forwarded-Proto') ?? null,
+      reqIp: req.ip,
+      trustProxy: req.app.get('trust proxy'),
+      chain: [req.socket.remoteAddress, ...(forwardedFor ?? '').split(',').map((a) => a.trim()).filter(Boolean).reverse()],
+    });
+  });
+}
+
 module.exports = router;

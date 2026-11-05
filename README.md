@@ -337,12 +337,36 @@ To rotate it, replace the value (Render restarts the service); to switch saved r
 
 **Allowed browser origins (CORS).** `CORS_ORIGINS` is a comma-separated list of exact origins (`https://host[:port]`, no path or trailing slash); an invalid entry stops the server at startup. A browser request from any other origin, including other Vercel URLs of the project and preview deployments, gets `403 Origin not allowed` before it is processed or rate limited. Unset or empty, the list is the production frontend plus Vite on localhost (ports 5173 and 4173); set it in production so only the real frontend is listed. CORS only binds browsers: scripts can still call the API without an `Origin` header, so the rate limit stays the abuse control.
 
-**Rate limiting and proxies.** Each client gets 30 tokens, refilled at 10 per second; a request costs 1 token plus 1 per stop (saved-route writes are also limited to 10 per hour). Behind Render's proxy, Express sees the proxy's address unless `TRUST_PROXY_HOPS` is set to the exact number of proxies, so with it unset, visitors may share one allowance. A wrong value is worse: clients could fake their IP with `X-Forwarded-For`. To find the right value, set `TRUST_PROXY_HOPS=1`, deploy, then:
-1. From your network, send about 35 quick requests (for example `POST /api/snap`) until you get `429`.
-2. Immediately send one more with a made-up header, `X-Forwarded-For: 203.0.113.7`. It must also get `429`; a `200` means the value is too high (spoofable).
-3. From a different network (such as a phone hotspot), send one request. It must get `200`; a `429` means the value is too low (clients still share an allowance).
+**Rate limiting and proxies.** Each client gets 30 tokens, refilled at 10 per second; a request costs 1 token plus 1 per stop (saved-route writes are also limited to 10 per hour). Requests reach Render through Cloudflare, so Express sees a proxy's address unless `TRUST_PROXY_HOPS` is set to the exact number of proxies; with it unset, visitors may share one allowance. A wrong value is worse: clients could fake their IP with `X-Forwarded-For`. **Leave it unset until the proxy chain has been measured:**
 
-Keep the value only if both checks pass; otherwise unset it.
+1. Deploy the backend as a **temporary** Render web service (same region and plan as production) with `NODE_ENV=production`, `PROXY_DIAGNOSTICS=1`, a test-only `ADMIN_API_KEY` and no `TRUST_PROXY_HOPS`. `GET /api/debug/proxy` (with the bearer key) then shows how your own request reaches the app: `socket`, the raw `xForwardedFor`, `cfConnectingIp`, `reqIp` (what Express uses now) and `chain`. `chain[n]` is what `req.ip` would be with `TRUST_PROXY_HOPS=n` (its last entry if the chain is shorter).
+2. Use two networks, A (home) and B (phone hotspot), with IPv6 on at least one if you can. On each, note your real public IP (`curl -s https://www.cloudflare.com/cdn-cgi/trace | grep '^ip='`, also with `-4` and `-6`), then send 20 requests:
+   ```bash
+   for i in $(seq 20); do curl -s -H "Authorization: Bearer $KEY" "$PROBE/api/debug/proxy"; echo; sleep 0.5; done
+   ```
+   Repeat from A with `-H 'X-Forwarded-For: 203.0.113.7'` and with `-H 'X-Forwarded-For: 198.51.100.1, 203.0.113.7'`, then from B, with `curl -6`, and again after a redeploy.
+3. Baseline with trust off: from A, send a burst; then, straight away, one request from B. A `429` on B means the two networks share an allowance.
+   ```bash
+   seq 40 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' -d '{"lat":40.7146,"lng":-74.0085}' "$PROBE/api/snap" | sort | uniq -c
+   ```
+
+Choose a value N only if **all** of these hold:
+- Without a client `X-Forwarded-For`, `chain` always has the same length, and `chain[0]` is always a private address.
+- Every entry is identified: your IP, or a Cloudflare address ([published ranges](https://www.cloudflare.com/ips/)).
+- Your real IP is at the same index N in every response, from A and from B, and the two IPs differ.
+- With a faked `X-Forwarded-For`, `chain[N]` is still your real IP (the fake values appear only after N, or not at all).
+- `cfConnectingIp` equals `chain[N]` every time.
+- Over IPv6, `chain[N]` is your real IPv6 address, not a Cloudflare pseudo-IPv4 address (240.0.0.0/4), which would bypass the per-/64 grouping.
+- All of this is unchanged after the redeploy.
+
+If any check fails, leave `TRUST_PROXY_HOPS` unset. If all hold, set `TRUST_PROXY_HOPS=N` on the temporary service and confirm:
+- `reqIp` is your real IP from A and from B, and a faked `X-Forwarded-For` does not change it.
+- The burst from A gives about 30 × `200` and 10 × `429` with `Retry-After`.
+- Repeated straight away with a different fake per request (`-H "X-Forwarded-For: 203.0.113.{}"`), every request gets `429`.
+- B, at the same moment, gets `200`.
+- The smoke test passes.
+
+Only then set the same value in production, repeat the burst, fake-header and second-network checks there, and delete the temporary service. To undo, delete `TRUST_PROXY_HOPS`.
 
 After deploying, run `node backend/scripts/smoke.mjs https://<your-backend>.onrender.com`.
 
