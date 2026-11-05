@@ -245,8 +245,10 @@ Straight-line (Haversine) distances, so the exact brute-force solver stays fast.
 `POST /api/routes` · `GET /api/routes?limit=50&offset=0`
 
 > [!WARNING]
-> **Not production-secure.** This endpoint is **unauthenticated**: anyone can save routes and list every saved route. Routes are stored in a local **SQLite file, which is not durable on Render** (the disk is reset on every deploy and restart). Treat it as a demo feature until authentication and persistent storage are added.
+> **Operator-only, and not durable.** These endpoints need the server's `ADMIN_API_KEY` as a bearer token and are **switched off (`404`) while it is unset**. The frontend does not use them. Routes are stored in a local **SQLite file, which is not durable on Render** (the disk is reset on every deploy and restart).
 
+- **Access:** `Authorization: Bearer <ADMIN_API_KEY>`. A missing, malformed or wrong key gets `401 {"error":"Unauthorized"}` with `WWW-Authenticate: Bearer`; the key is checked before anything else. The key is one shared secret (no per-user accounts): anyone who has it can read and add every saved route. Keep it on the server only, never in a `VITE_` variable (Vite builds those into the public frontend).
+- **Capacity:** at most 1,000 saved routes. When full, saves get `409` and nothing is deleted.
 - **Allowed fields only:** `name` (1–100 characters), `algorithm` (`'Dijkstra' | 'A*' | 'TSP'`), `distance` (number ≥ 0), `stops` (2–25 `{ lat, lng }` points, required), `path` (up to 2,000 points). Any other field, including `id` or timestamps, is rejected with `400`.
 - **Limits:** request bodies up to 100 kB (larger: `413`); 10 saves per client per hour (then `429`); invalid requests do not count toward that.
 - **Listing:** newest first; `limit` 1–100 (default 50), `offset` ≥ 0. Returns a JSON array.
@@ -306,7 +308,7 @@ npm run check:tiles  # needs internet: fetches one real map tile (not part of np
 The backend suite covers:
 * **Data structures and algorithms**: the MinHeap, Dijkstra/A* agreement, strongly connected components, Nearest Neighbor, and 2-opt (including one-way streets, where it must never lengthen a tour).
 * **TSP tours on the real city graphs**: every stop visited once, depot first and last, every leg a real road path, and distance equal to the sum of the legs.
-* **API behaviour**: input validation and JSON errors, per-request `cityId` with two visitors at once, rate limiting, saved-route validation and pagination, and server startup on a busy port.
+* **API behaviour**: input validation and JSON errors, per-request `cityId` with two visitors at once, rate limiting, security headers, allowed CORS origins, the saved-route admin key, capacity, validation and pagination, and server startup on a busy port.
 
 `node backend/scripts/smoke.mjs <baseUrl>` is a read-only smoke test for a running backend (local or deployed).
 
@@ -321,8 +323,17 @@ The backend runs on Render and the frontend on Vercel. **Deploy both together**:
 | Render (backend) | `NODE_ENV` | `production` |
 | Render (backend) | `PORT` | set by Render |
 | Render (backend) | `CORS_ORIGINS` | `https://routewise-seven.vercel.app` (plus any custom domain of the frontend) |
+| Render (backend) | `ADMIN_API_KEY` | leave unset (saved routes off), or a key from the command below |
 | Render (backend) | `TRUST_PROXY_HOPS` | **leave unset** until measured (below) |
 | Vercel (frontend) | `VITE_API_URL` | `https://<your-backend>.onrender.com/api` |
+
+**Admin key.** Only needed for the saved-routes endpoints. It must be at least 32 characters of `A-Z a-z 0-9 - . _ ~ + /` (an invalid key stops the server at startup). Generate one and paste it straight into Render's environment settings, never into a file or the frontend:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+To rotate it, replace the value (Render restarts the service); to switch saved routes off, delete it.
 
 **Allowed browser origins (CORS).** `CORS_ORIGINS` is a comma-separated list of exact origins (`https://host[:port]`, no path or trailing slash); an invalid entry stops the server at startup. A browser request from any other origin, including other Vercel URLs of the project and preview deployments, gets `403 Origin not allowed` before it is processed or rate limited. Unset or empty, the list is the production frontend plus Vite on localhost (ports 5173 and 4173); set it in production so only the real frontend is listed. CORS only binds browsers: scripts can still call the API without an `Origin` header, so the rate limit stays the abuse control.
 

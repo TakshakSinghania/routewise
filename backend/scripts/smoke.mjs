@@ -100,6 +100,9 @@ const many = await call('/api/tsp', { stops: Array(26).fill({ lat: 40.715, lng: 
 check('26 TSP stops -> JSON 400', many.status === 400 && many.type.includes('json'), `HTTP ${many.status}`);
 const unknown = await call('/api/snap', { lat: 40.715, lng: -74.005, cityId: 'atlantis' });
 check('unknown cityId -> JSON 400', unknown.status === 400 && unknown.type.includes('json'), `HTTP ${unknown.status}`);
+const savedRoutes = await call('/api/routes');
+check('saved routes are not public (GET /api/routes without a key -> 401 or 404)',
+  [401, 404].includes(savedRoutes.status), `HTTP ${savedRoutes.status}`);
 const bench = await call('/api/benchmark', { stops: pointsIn(meta.new_york?.bounds ?? [[40.705, -74.015], [40.725, -73.995]]) });
 check('benchmark (4 stops)', bench.status === 200 && bench.json?.exact?.distance > 0, `HTTP ${bench.status}`);
 

@@ -1,12 +1,21 @@
 const request = require('supertest');
 const rateLimiter = require('../middleware/rateLimiter');
 
-// A fresh copy of the app with its own rate limiters (and an unsynced in-memory test database).
-function freshApp() {
-  let app;
-  jest.isolateModules(() => { app = require('../index'); });
-  return app;
+// A fresh copy of the app with its own rate limiters (and an unsynced in-memory test database),
+// loaded with the given environment variables.
+function freshApp(env = {}) {
+  const saved = { ...process.env };
+  Object.assign(process.env, env);
+  try {
+    let app;
+    jest.isolateModules(() => { app = require('../index'); });
+    return app;
+  } finally {
+    process.env = saved;
+  }
 }
+
+const KEY = `test-admin-key-${'k'.repeat(32)}`; // a test value, not a real key
 
 const UNCONDITIONAL = {
   'x-content-type-options': 'nosniff',
@@ -28,10 +37,11 @@ afterEach(() => jest.restoreAllMocks());
 
 describe('security headers on every kind of response', () => {
   let app;
-  beforeAll(() => { app = freshApp(); });
+  beforeAll(() => { app = freshApp({ ADMIN_API_KEY: KEY }); });
 
   test.each([
     ['200 GET /health', (a) => request(a).get('/health'), 200],
+    ['401 missing bearer key', (a) => request(a).get('/api/routes'), 401],
     ['200 POST /api/snap', (a) => request(a).post('/api/snap').send({ ...NY, cityId: 'new_york' }), 200],
     ['400 validation error', (a) => request(a).post('/api/benchmark').send({ stops: [1, 2] }), 400],
     ['400 malformed JSON', (a) => request(a).post('/api/snap').set('Content-Type', 'application/json').send('{"lat":'), 400],
@@ -48,7 +58,7 @@ describe('security headers on every kind of response', () => {
 
   test('500 internal error (saved routes table missing in the unsynced test database)', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {}); // the 5xx handler logs the error
-    const res = await request(app).get('/api/routes');
+    const res = await request(app).get('/api/routes').set('Authorization', `Bearer ${KEY}`);
     expect(res.status).toBe(500);
     expectSecurityHeaders(res);
   });

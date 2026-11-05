@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const { dijkstra, aStar } = require('../dsa/shortestPath');
 const { nearestNeighbor, twoOpt, calculateTotalDistance, bruteForceTSP, planTour } = require('../dsa/tsp');
@@ -18,6 +19,40 @@ const MAX_ROUTES_PAGE = 100;
 // Saved routes are stored on disk, so writes get their own, much slower allowance:
 // 10 per client per hour, on top of the general API limit.
 const writeLimiter = rateLimiter(10, 10 / 3600);
+
+// Saved routes are for the operator only: they need ADMIN_API_KEY as a bearer token, and are
+// switched off (404, like any unknown path) while it is unset. Never put the key in frontend code.
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
+if (ADMIN_API_KEY && !/^[A-Za-z0-9\-._~+/]{32,}=*$/.test(ADMIN_API_KEY)) {
+  throw new Error('ADMIN_API_KEY must be at least 32 characters of A-Z a-z 0-9 - . _ ~ + / (optionally ending in =).');
+}
+const BEARER = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/i; // RFC 6750 token; the scheme is case-insensitive
+const sha256 = (text) => crypto.createHash('sha256').update(text).digest();
+const adminKeyHash = sha256(ADMIN_API_KEY);
+
+// A missing, malformed or wrong key all get the same 401. Both sides are hashed to 32 bytes, so
+// the constant-time comparison reveals nothing about the key, not even its length.
+function requireAdminKey(req, res, next) {
+  if (!ADMIN_API_KEY) return next('router'); // switched off: falls through to the app's 404
+  const token = BEARER.exec(req.get('Authorization') || '')?.[1];
+  if (token !== undefined && crypto.timingSafeEqual(sha256(token), adminKeyHash)) return next();
+  res.set('WWW-Authenticate', 'Bearer').status(401).json({ error: 'Unauthorized' });
+}
+
+const MAX_SAVED_ROUTES = 1000; // at most ~100 kB each (the body limit), so about 100 MB when full
+
+// Saves run one at a time, so the count check and the insert cannot interleave and go over the limit.
+// shortcut: per process; several server processes sharing one database would need a transaction.
+let saveQueue = Promise.resolve();
+function saveRoute(fields) {
+  const result = saveQueue.then(async () => {
+    if (await Route.count() >= MAX_SAVED_ROUTES) return null;
+    // `fields` limits the insert to the validated columns (no client-chosen id or timestamps).
+    return Route.create(fields, { fields: Object.keys(fields) });
+  });
+  saveQueue = result.catch(() => {}); // a failed save must not block the ones after it
+  return result;
+}
 
 // Each request names its own city (body.cityId, default New York); nothing is shared between visitors.
 function withCity(req, res, next) {
@@ -186,25 +221,25 @@ router.post('/benchmark', (req, res) => {
   });
 });
 
-// Save route. Unauthenticated: anyone can save and list routes (see README).
-// Validation runs before the write limit, so rejected requests do not use up the allowance.
-router.post('/routes', (req, res, next) => {
+// Save route (admin key required). The key and validation run before the write limit, so
+// rejected requests do not use up the allowance.
+router.post('/routes', requireAdminKey, (req, res, next) => {
   const parsed = parseSavedRoute(req.body);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
   req.savedRoute = parsed.route;
   next();
 }, writeLimiter, async (req, res, next) => {
   try {
-    // `fields` limits the insert to the validated columns (no client-chosen id or timestamps).
-    const route = await Route.create(req.savedRoute, { fields: Object.keys(req.savedRoute) });
+    const route = await saveRoute(req.savedRoute);
+    if (!route) return res.status(409).json({ error: `Saved-route limit reached (${MAX_SAVED_ROUTES}).` });
     res.json(route);
   } catch (error) {
     next(error); // generic JSON 500, without database details
   }
 });
 
-// List saved routes, newest first: ?limit= (1-100, default 50) and ?offset= (default 0).
-router.get('/routes', async (req, res, next) => {
+// List saved routes (admin key required), newest first: ?limit= (1-100, default 50) and ?offset= (default 0).
+router.get('/routes', requireAdminKey, async (req, res, next) => {
   const limit = req.query.limit === undefined ? DEFAULT_ROUTES_PAGE : Number(req.query.limit);
   const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ROUTES_PAGE || !Number.isInteger(offset) || offset < 0) {
